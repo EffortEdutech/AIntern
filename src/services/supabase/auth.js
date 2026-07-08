@@ -39,7 +39,7 @@ export class AuthService {
    * @param {Object} params
    * @param {string} params.email
    * @param {string} params.password
-   * @param {Object} params.metadata  — { full_name, phone_number, ... }
+   * @param {Object} params.metadata  — { full_name, phone, ... }
    * @returns {Promise<{success, user, error}>}
    */
   async signUp({ email, password, metadata = {} }) {
@@ -53,7 +53,7 @@ export class AuthService {
         options: {
           data: {
             full_name:    metadata.full_name    || '',
-            phone_number: metadata.phone_number || '',
+            phone: metadata.phone || '',
             ...metadata
           }
         }
@@ -75,12 +75,12 @@ export class AuthService {
       //   c) this works even if the trigger hasn't been deployed yet
       if (newUser?.id) {
         const { error: profileError } = await supabase
-          .from('user_profiles')
+          .from('profiles')
           .upsert(
             {
               id:           newUser.id,
               full_name:    metadata.full_name    || '',
-              phone_number: metadata.phone_number || '',
+              phone: metadata.phone || '',
               created_at:   new Date().toISOString(),
               updated_at:   new Date().toISOString()
             },
@@ -134,7 +134,7 @@ export class AuthService {
       // Catches users who registered before the trigger was deployed.
       if (data.user?.id) {
         const { data: existing } = await supabase
-          .from('user_profiles')
+          .from('profiles')
           .select('id')
           .eq('id', data.user.id)
           .maybeSingle();
@@ -142,11 +142,11 @@ export class AuthService {
         if (!existing) {
           console.log('⚠️ No profile found on login — creating now');
           await supabase
-            .from('user_profiles')
+            .from('profiles')
             .insert({
               id:           data.user.id,
               full_name:    data.user.user_metadata?.full_name    || '',
-              phone_number: data.user.user_metadata?.phone_number || '',
+              phone: data.user.user_metadata?.phone || '',
               created_at:   new Date().toISOString(),
               updated_at:   new Date().toISOString()
             })
@@ -228,8 +228,8 @@ export class AuthService {
   async getUserProfile(userId) {
     try {
       const { data, error } = await supabase
-        .from('user_profiles')
-        .select('id, full_name, phone_number, avatar_url, global_role, preferences, created_at')
+        .from('profiles')
+        .select('id, full_name, phone, university, course, created_at')
         .eq('id', userId)
         .maybeSingle();
 
@@ -248,7 +248,7 @@ export class AuthService {
    * Update the current user's profile.
    *
    * @param {string} userId
-   * @param {Object} profileData  — { full_name, phone_number, avatar_url, preferences }
+   * @param {Object} profileData  — { full_name, phone, avatar_url, preferences }
    * @returns {Promise<{success, data?, error?}>}
    */
   async updateProfile(userId, profileData) {
@@ -259,7 +259,7 @@ export class AuthService {
       const { global_role: _global_role, id: _id, created_at: _created_at, ...safeData } = profileData;
 
       const { data, error } = await supabase
-        .from('user_profiles')
+        .from('profiles')
         .update({ ...safeData, updated_at: new Date().toISOString() })
         .eq('id', userId)
         .select()

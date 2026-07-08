@@ -1,12 +1,12 @@
 # AIntern — Development Progress Log
 
-**Last Updated:** July 9, 2026 — End of Session 1
+**Last Updated:** July 9, 2026 — End of Session 2
 
 ## 📊 OVERALL STATUS
 
 | Phase | Description | Status |
 |-------|-------------|--------|
-| Phase 0 | Foundation (seed, schema, AI gateway) | 🔄 S1 done, S2–S3 pending |
+| Phase 0 | Foundation (seed, schema, AI gateway) | 🔄 S1–S2 done, S3 (AI gateway) pending |
 | Phase 1 | Intern Logging Core | 📅 |
 | Phase 2 | Supervisor Loop (email links, snapshots, evaluations) | 📅 |
 | Phase 3 | Export & Premium (PDF logbook, AI form import) | 📅 |
@@ -36,5 +36,31 @@
 - `src/` still contains WorkLedger modules (orgs, contracts, subcontractors) — stripped in Session 2 alongside routing/nav rebuild.
 - Supabase Edge Functions from WorkLedger (`generate-report-template`, `notify-approval`) copied but not deployed — reworked in S3/Phase 2.
 
-#### Next Session (S2)
-- `src/config/platform.js`, AIntern branding/theme, remove org/contract modules from router + nav, mobile-first intern shell, onboarding flow scaffold, `useTerminology()`.
+---
+
+### Session 2: Module Strip + Intern Shell + Onboarding ✅
+**Date:** July 9, 2026
+
+#### New
+- `src/config/platform.js` — app identity, module flags (WorkLedger business modules parked), cadence/digest options, terminology defaults.
+- `src/hooks/useTerminology.js` — label lookup with per-internship overrides (`metadata.terminology`).
+- `src/services/api/internshipService.js` — getMyInternship / createInternship / updateInternship / saveProfile (owner-scoped via RLS).
+- `src/components/layout/InternShell.jsx` — mobile-first shell: top bar + bottom nav (Home / Log / History / Profile), max-w-md, OfflineIndicator retained.
+- `src/pages/intern/InternHome.jsx` — internship card, onboarding CTA, feature-gated daily-log button.
+- `src/pages/intern/InternProfile.jsx` — profile fields + review settings (cadence 7/14/30, digest mode). Replaces org-dependent ProfilePage.
+- `src/pages/intern/ComingSoon.jsx` — placeholder for /log and /history.
+- `src/pages/onboarding/Onboarding.jsx` — 4-step wizard (You → Internship → Supervisor → Reviews); saves profile at step 1, creates internship on finish.
+
+#### Changed
+- `src/router.jsx` — rewritten: public auth routes + 5 intern routes + 404. All WorkLedger business routes unrouted (pages parked in src/pages for engine reuse). Role guards removed — single authenticated persona.
+- `src/App.jsx` — OrganizationProvider removed; platform branding.
+- `src/services/supabase/auth.js` — `user_profiles` → `profiles`, `phone_number` → `phone`, profile select matches AIntern columns.
+- `src/components/layout/AuthLayout.jsx`, `index.html`, `main.jsx` — rebranded to AIntern.
+- Removed stray `graphify-out/cache` dirs from src subfolders (seed hygiene).
+
+#### Verification
+- esbuild syntax check passed on all 13 new/changed files (full `npm run build` to be run locally — sandbox can't persist node_modules).
+- Known deferred: OfflineContext still references WorkLedger Dexie schema — harmless at boot (empty queue); rewritten in Phase 1 (S4).
+
+#### Next Session (S3)
+- `ai-gateway` Edge Function: provider abstraction (OpenAI default / Anthropic / Gemini), BYOK key encrypt/decrypt via Vault, `ai_usage` metering, tier resolution.

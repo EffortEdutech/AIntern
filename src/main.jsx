@@ -32,7 +32,7 @@ if (!rootElement) {
 }
 
 // Log app initialization
-console.log('\u{1F680} WorkLedger initializing...');
+console.log('\u{1F680} AIntern initializing...');
 console.log(`\u{1F4E6} Version: ${import.meta.env.VITE_APP_VERSION || '1.0.0'}`);
 console.log(`\u{1F30D} Environment: ${import.meta.env.VITE_APP_ENV || 'development'}`);
 console.log(`\u{1F527} Node Environment: ${import.meta.env.MODE}`);
@@ -52,7 +52,7 @@ root.render(
 );
 
 // Log successful mount
-console.log('\u2705 WorkLedger mounted successfully');
+console.log('\u2705 AIntern mounted successfully');
 
 // Service worker is managed by VitePWA plugin (vite.config.js)
 // registerType: 'autoUpdate' handles registration - do NOT manually register.

@@ -1,5 +1,5 @@
 /**
- * WorkLedger - Auth Layout Component
+ * AIntern - Auth Layout Component
  * 
  * Simple centered layout for authentication pages (login, register, forgot password).
  * Includes branding and footer.
@@ -20,10 +20,10 @@ export function AuthLayout({ children }) {
         <div className="max-w-7xl mx-auto">
           <Link to={ROUTES.LOGIN} className="flex items-center space-x-2">
             <div className="w-10 h-10 bg-primary-600 rounded-lg flex items-center justify-center">
-              <span className="text-white font-bold text-xl">W</span>
+              <span className="text-white font-bold text-xl">A</span>
             </div>
             <span className="text-2xl font-bold text-gray-900">
-              WorkLedger
+              AIntern
             </span>
           </Link>
         </div>
@@ -40,7 +40,7 @@ export function AuthLayout({ children }) {
       <footer className="py-6 px-4 border-t border-gray-200">
         <div className="max-w-7xl mx-auto text-center text-sm text-gray-600">
           <p>
-            © {new Date().getFullYear()} WorkLedger by KL. All rights reserved.
+            © {new Date().getFullYear()} AIntern by Effort Edutech. All rights reserved.
           </p>
           <div className="mt-2 space-x-4">
             <a href="#" className="hover:text-gray-900">Privacy Policy</a>
