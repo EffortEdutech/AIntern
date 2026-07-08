@@ -1,0 +1,63 @@
+{
+  "name": "WorkLedger",
+  "short_name": "WorkLedger",
+  "description": "Contract-aware work reporting for field technicians",
+  "start_url": "/",
+  "id": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "lang": "en-MY",
+  "dir": "ltr",
+  "categories": ["business", "productivity", "utilities"],
+
+  "icons": [
+    {
+      "src": "/icons/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/manifest-icon-192.maskable.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/manifest-icon-512.maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+
+  "shortcuts": [
+    {
+      "name": "New Work Entry",
+      "short_name": "New Entry",
+      "description": "Create a new work entry",
+      "url": "/work/new",
+      "icons": [{ "src": "/icons/icon-192x192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Pending Approvals",
+      "short_name": "Approvals",
+      "description": "Review work entries awaiting approval",
+      "url": "/work/approvals",
+      "icons": [{ "src": "/icons/icon-192x192.png", "sizes": "192x192" }]
+    }
+  ],
+
+  "screenshots": [],
+  "related_applications": [],
+  "prefer_related_applications": false
+}
