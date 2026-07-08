@@ -63,7 +63,7 @@
   "license": "PROPRIETARY",
   "private": true,
   "engines": {
-    "node": "20.x",
+    "node": ">=20",
     "npm": ">=9.0.0"
   }
 }
