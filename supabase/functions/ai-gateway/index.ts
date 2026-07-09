@@ -38,16 +38,22 @@ const PER_REQUEST_MAX_TOKENS = Number(Deno.env.get('AINTERN_PER_REQUEST_MAX_TOKE
 
 const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
-const CORS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
+// CORS: reflect whatever headers the browser preflights (the Supabase
+// client attaches custom x-application-* headers), rather than a static list.
+function corsHeaders(req: Request): Record<string, string> {
+  return {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers':
+      req.headers.get('Access-Control-Request-Headers') ??
+      'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  };
+}
 
-const json = (body: unknown, status = 200) =>
+const jsonWith = (req: Request) => (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
-    headers: { ...CORS, 'Content-Type': 'application/json' },
+    headers: { ...corsHeaders(req), 'Content-Type': 'application/json' },
   });
 
 // ─── Crypto (AES-GCM, key derived from secret) ────────────────────────────
@@ -203,7 +209,8 @@ async function monthlyUsage(userId: string): Promise<number> {
 // ─── Handler ──────────────────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
+  const json = jsonWith(req);
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders(req) });
   if (req.method !== 'POST') return json({ success: false, error: 'POST only' }, 405);
 
   // Authenticate the intern

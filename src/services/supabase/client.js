@@ -54,7 +54,7 @@ const supabaseConfig = {
   
   global: {
     headers: {
-      'x-application-name': 'WorkLedger',
+      'x-application-name': 'AIntern',
       'x-application-version': import.meta.env.VITE_APP_VERSION || '1.0.0'
     }
   }

@@ -48,7 +48,17 @@ export function OfflineProvider({ children }) {
   }, []);
 
   // ── Trigger full sync cycle ───────────────────────────────────────────
+  // AINTERN SESSION 3: legacy WorkLedger sync disabled — it queries
+  // user_profiles/org_members which don't exist in the AIntern schema
+  // (404 noise on boot). Offline store + push flow are rewritten in
+  // Phase 1 (S4-S6) around entry_submissions. Online/offline status UI
+  // remains fully functional.
+  const LEGACY_SYNC_ENABLED = false;
+
   const triggerSync = useCallback(async () => {
+    if (!LEGACY_SYNC_ENABLED) {
+      return;
+    }
     if (isSyncing.current || !navigator.onLine) {
       return;
     }
