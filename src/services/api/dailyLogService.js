@@ -34,22 +34,20 @@ class DailyLogService {
         await internDb.templateCache.put({
           template_id: DAILY_TEMPLATE_ID,
           template: data,
-          cached_at: new Date().toISOString(),
+          cached_at: new Date().toISOString()
         });
         return { success: true, data, fromCache: false };
       }
       throw new Error(error?.message || 'Template not found online');
-    } catch (err) {
+    } catch {
       // Offline (or fetch failed) — use cache
       const cached = await internDb.templateCache.get(DAILY_TEMPLATE_ID);
       if (cached?.template) {
-        console.log('📦 Daily template served from offline cache');
         return { success: true, data: cached.template, fromCache: true };
       }
-      console.error('❌ getDailyTemplate: no network and no cache:', err);
       return {
         success: false,
-        error: 'Template unavailable offline. Open the app once while online to cache it.',
+        error: 'Template unavailable offline. Open the app once while online to cache it.'
       };
     }
   }
@@ -84,7 +82,7 @@ class DailyLogService {
       status,
       late,
       client_created_at: clientCreatedAt,
-      updated_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
     };
     await internDb.dailyDrafts.put(record);
     return record;
@@ -96,6 +94,63 @@ class DailyLogService {
   async listDrafts() {
     const all = await internDb.dailyDrafts.toArray();
     return all.sort((a, b) => (a.entry_date < b.entry_date ? 1 : -1));
+  }
+
+  /**
+   * Ready drafts selected for supervisor submission.
+   */
+  async listReadyDrafts(entryDates = []) {
+    const wanted = new Set(entryDates);
+    const all = await this.listDrafts();
+    return all.filter((draft) => draft.status === 'ready' && wanted.has(draft.entry_date));
+  }
+
+  /**
+   * Merge server-side submission status into the local draft.
+   */
+  async markSubmitted(entryDate, submission) {
+    const existing = await internDb.dailyDrafts.get(entryDate);
+    if (!existing) {
+      return null;
+    }
+
+    const status = submission.status === 'approved' || submission.status === 'rejected'
+      ? submission.status
+      : 'submitted';
+
+    const next = {
+      ...existing,
+      status,
+      submission_id: submission.id,
+      submitted_at: submission.submitted_at ?? existing.submitted_at ?? new Date().toISOString(),
+      resolved_at: submission.resolved_at ?? null,
+      supervisor_comment: submission.supervisor_comment ?? null,
+      updated_at: new Date().toISOString()
+    };
+    await internDb.dailyDrafts.put(next);
+    return next;
+  }
+
+  /**
+   * Reopen a pending submitted draft after the intern withdraws it.
+   */
+  async markReady(entryDate) {
+    const existing = await internDb.dailyDrafts.get(entryDate);
+    if (!existing) {
+      return null;
+    }
+
+    const next = {
+      ...existing,
+      status: 'ready',
+      submission_id: null,
+      submitted_at: null,
+      resolved_at: null,
+      supervisor_comment: null,
+      updated_at: new Date().toISOString()
+    };
+    await internDb.dailyDrafts.put(next);
+    return next;
   }
 
   /**

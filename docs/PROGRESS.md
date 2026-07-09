@@ -1,14 +1,14 @@
 # AIntern — Development Progress Log
 
-**Last Updated:** July 9, 2026 — End of Session 5
+**Last Updated:** July 9, 2026 — End of Session 6
 
 ## 📊 OVERALL STATUS
 
 | Phase | Description | Status |
 |-------|-------------|--------|
 | Phase 0 | Foundation (seed, schema, AI gateway) | ✅ Complete — S1–S3 |
-| Phase 1 | Intern Logging Core | 🔄 S4–S5 done; S6 (submission flow) pending |
-| Phase 2 | Supervisor Loop (email links, snapshots, evaluations) | 📅 |
+| Phase 1 | Intern Logging Core | ✅ Complete — S4–S6 |
+| Phase 2 | Supervisor Loop (email links, snapshots, evaluations) | 🔄 Next — S7 token/email service |
 | Phase 3 | Export & Premium (PDF logbook, AI form import) | 📅 |
 | Phase 4 | Monetization & Pilot | 📅 |
 
@@ -136,5 +136,32 @@ All edits to existing files — no new modules, no schema changes. Graphify grap
 - Note: existing drafts saved before S5 have no `late` field — they show as on-time (acceptable; flag recomputes on next save).
 - ⚠ Graphify: content changed in 5 files (no structural additions). Refresh at sign-off from Windows: `.\scripts\graphify.ps1` per AGENTS.md (PowerShell wrapper can't run in the Linux sandbox).
 
-#### Next Session (S6)
-- Submission flow: push `ready` drafts to `entry_submissions` (transient content upload), submission batching, intern-facing status sync back to Dexie. Groundwork for Phase 2 supervisor email links.
+---
+
+### Session 6: Submission Flow + Batch Queue ✅
+**Date:** July 9, 2026
+
+No schema changes. Uses existing `entry_submissions` owner RLS: interns insert/read/delete their own pending submissions; approvals/rejections remain service-role-only for Phase 2.
+
+#### New
+- `src/services/api/submissionService.js` — authenticated submission API:
+  - inserts ready Dexie drafts into `entry_submissions` with `status = 'pending'`;
+  - detects existing same-date submissions instead of upserting (keeps RLS narrow; no intern UPDATE policy needed);
+  - syncs readable submission status (`pending`/`approved`/`rejected`) back into Dexie;
+  - withdraws still-pending submissions via the existing owner delete policy.
+
+#### Changed
+- `dailyLogService` — added helpers for selected ready drafts, marking local drafts submitted/approved/rejected, and reopening withdrawn drafts to `ready`.
+- `DailyLogPage` — "Save log" renamed to "Save as ready"; copy now points interns to History for online submission; submitted logs show supervisor comments when present.
+- `LogHistory` — now doubles as the batch submission workspace:
+  - select all ready logs or pick individual ready logs;
+  - submit selected logs to Supabase when online;
+  - sync review status from `entry_submissions`;
+  - withdraw still-pending submissions back to ready.
+
+#### Verification
+- `npm run build` passed.
+- Build note: Browserslist/caniuse-lite warning is informational; no action taken.
+
+#### Next Session (S7)
+- Token service + email sending: issue scoped supervisor links for pending `entry_submissions`, send via Resend/SMTP Edge Function, and prepare digest/cadence scheduling.

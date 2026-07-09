@@ -3,8 +3,8 @@
  *
  * Renders the Daily Task Sheet via the template engine. Offline-first:
  * template served from Dexie cache when offline, drafts autosaved to
- * Dexie on every change. "Save" marks the draft ready; submission to
- * the supervisor arrives in Phase 2.
+ * Dexie on every change. "Save" marks the draft ready; History handles
+ * supervisor submission batching.
  *
  * AI polish: wraps DynamicForm in AiPolishProvider → every textarea
  * gets the ✨ Polish button (BYOK or bundled via ai-gateway).
@@ -13,7 +13,7 @@
  * @created July 9, 2026 - Session 4
  */
 
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import InternShell from '../../components/layout/InternShell';
 import DynamicForm from '../../components/templates/DynamicForm';
@@ -39,7 +39,7 @@ const STATUS_LABEL = {
   ready: { text: 'Ready to submit', cls: 'bg-blue-100 text-blue-700' },
   submitted: { text: 'Awaiting review', cls: 'bg-amber-100 text-amber-700' },
   approved: { text: 'Approved', cls: 'bg-emerald-100 text-emerald-700' },
-  rejected: { text: 'Needs revision', cls: 'bg-red-100 text-red-700' },
+  rejected: { text: 'Needs revision', cls: 'bg-red-100 text-red-700' }
 };
 
 export default function DailyLogPage() {
@@ -65,9 +65,11 @@ export default function DailyLogPage() {
       const [tpl, existing, { data: itn }] = await Promise.all([
         dailyLogService.getDailyTemplate(),
         dailyLogService.getDraft(entryDate),
-        internshipService.getMyInternship(),
+        internshipService.getMyInternship()
       ]);
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
       if (tpl.success) {
         setTemplate(tpl.data);
         setFromCache(tpl.fromCache);
@@ -78,7 +80,9 @@ export default function DailyLogPage() {
       setInternship(itn);
       setLoading(false);
     })();
-    return () => { mounted = false; };
+    return () => {
+      mounted = false;
+    };
   }, [entryDate]);
 
   const deadlineTime = internship?.metadata?.deadline_time || '23:59';
@@ -98,7 +102,7 @@ export default function DailyLogPage() {
   const handleSubmit = async (formData) => {
     clearTimeout(autosaveTimer.current);
     await dailyLogService.saveDraft(entryDate, formData, 'ready', deadlineTime);
-    toast.success('Saved on this device — supervisor submission arrives in the next update');
+    toast.success('Saved as ready. Submit it from History when you are online.');
     navigate('/history');
   };
 
@@ -108,7 +112,7 @@ export default function DailyLogPage() {
       return { success: false, error: 'AI polish needs a connection — your text is safe, try again when online.' };
     }
     return aiService.polish(text, {
-      industry: internship?.department || internship?.company_name || '',
+      industry: internship?.department || internship?.company_name || ''
     });
   };
 
@@ -162,7 +166,7 @@ export default function DailyLogPage() {
 
         {!isOnline && (
           <p className="text-xs rounded-lg bg-amber-50 border border-amber-200 text-amber-800 px-3 py-2">
-            You're offline — everything you type is saved on this device.
+            You are offline — everything you type is saved on this device.
             {fromCache && ' (Form loaded from offline cache.)'}
           </p>
         )}
@@ -177,7 +181,12 @@ export default function DailyLogPage() {
           </div>
         ) : readOnly ? (
           <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-sm text-gray-600">
-            This log has been {status} and can no longer be edited here.
+            This log is {status === 'submitted' ? 'awaiting supervisor review' : status} and can no longer be edited here.
+            {draft?.supervisor_comment && (
+              <p className="mt-2 text-gray-700">
+                Supervisor comment: {draft.supervisor_comment}
+              </p>
+            )}
           </div>
         ) : (
           <AiPolishProvider polish={polish}>
@@ -186,7 +195,7 @@ export default function DailyLogPage() {
               initialData={draft?.data ?? {}}
               onChange={handleChange}
               onSubmit={handleSubmit}
-              submitLabel="Save log"
+              submitLabel="Save as ready"
               showCancel={false}
             />
           </AiPolishProvider>
