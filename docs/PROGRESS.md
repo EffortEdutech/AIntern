@@ -84,10 +84,12 @@ Dashboard → Project Settings → Edge Functions → Secrets:
 - `OPENAI_API_KEY` = platform key for the bundled tier (optional until bundled tier is offered; BYOK works without it).
 - Optional: `AINTERN_BUNDLED_MONTHLY_TOKEN_CAP`, `AINTERN_PER_REQUEST_MAX_TOKENS`.
 
-#### Verification
-- Function deployed via MCP, status ACTIVE, JWT verification enforced platform-side.
-- esbuild syntax checks pass (index.ts, aiService.js, InternProfile.jsx); no null-byte artifacts.
-- End-to-end test (save key → polish text) requires secrets set — first item of Session 4.
+#### Verification & Post-deploy Fixes (same day)
+- Function deployed via MCP, JWT verification enforced platform-side.
+- Fix 1: CORS — Supabase client sends `x-application-version`; function now reflects `Access-Control-Request-Headers` in preflight instead of a static allow-list. Redeployed (v4).
+- Fix 2: legacy WorkLedger sync in OfflineContext gated off (`LEGACY_SYNC_ENABLED = false`) — was 404-ing on `user_profiles`/`org_members` at boot. Rewritten properly in S4.
+- Fix 3: client header rebranded `x-application-name: AIntern`.
+- ✅ **User-verified end-to-end:** secrets set, Gemini BYOK key saved → encrypted → listed masked in Profile → AI Assistant. BYOK tier proven.
 
 #### Next Session (S4 — Phase 1 begins)
 - Seed Daily Task Sheet template; DynamicForm integration; Dexie local persistence; today view + history strip. Wire the polish button to aiService.
