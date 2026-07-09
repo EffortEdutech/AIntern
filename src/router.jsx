@@ -32,8 +32,9 @@ const ForgotPassword = lazy(() => import('./pages/auth/ForgotPassword'));
 // Intern pages
 const InternHome    = lazy(() => import('./pages/intern/InternHome'));
 const InternProfile = lazy(() => import('./pages/intern/InternProfile'));
-const ComingSoon    = lazy(() => import('./pages/intern/ComingSoon'));
 const Onboarding    = lazy(() => import('./pages/onboarding/Onboarding'));
+const DailyLogPage  = lazy(() => import('./pages/log/DailyLogPage'));
+const LogHistory    = lazy(() => import('./pages/log/LogHistory'));
 
 // 404
 const NotFoundPage = () => (
@@ -60,9 +61,9 @@ export const router = createBrowserRouter([
   { path: '/onboarding', element: <Auth><Onboarding /></Auth> },
   { path: '/profile',    element: <Auth><InternProfile /></Auth> },
 
-  // Feature-gated placeholders (Phase 1: daily log, Phase 2: history)
-  { path: '/log',     element: <Auth><ComingSoon feature="Daily logging" /></Auth> },
-  { path: '/history', element: <Auth><ComingSoon feature="Log history" /></Auth> },
+  // Daily logging (Session 4)
+  { path: '/log',     element: <Auth><DailyLogPage /></Auth> },
+  { path: '/history', element: <Auth><LogHistory /></Auth> },
 
   // ── 404 ─────────────────────────────────────────────────────────────
   { path: '*', element: <NotFoundPage /> }

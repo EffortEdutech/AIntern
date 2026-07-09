@@ -9,8 +9,11 @@
  * @updated February 2, 2026 - Session 15 (Added photo & signature support)
  */
 
-import React from 'react';
+import React, { useState, useContext } from 'react';
 import Input from '../common/Input';
+// AINTERN ADDITION: optional AI polish for textarea fields (Session 4).
+// When no AiPolishProvider is mounted, textareas render exactly as upstream.
+import { AiPolishContext } from '../../context/AiPolishContext';
 import PhotoUpload from '../attachments/PhotoUpload';
 import SignatureCanvas from '../attachments/SignatureCanvas';
 
@@ -288,17 +291,17 @@ export function FieldRenderer({
       );
 
     case 'textarea':
+      // AINTERN ADDITION (Session 4): textareas gain a ✨ Polish button when
+      // an AiPolishProvider is mounted above the form. Without a provider
+      // this renders identically to upstream WorkLedger.
       return (
-        <textarea
-          name={fieldPath}
-          value={fieldValue}
-          onChange={handleChange}
-          placeholder={field.placeholder || ''}
-          rows={field.rows || 4}
-          disabled={field.read_only}
-          className={`w-full px-3 py-2 border rounded-md focus:ring-primary-500 focus:border-primary-500 ${
-            error ? 'border-red-500' : 'border-gray-300'
-          }`}
+        <AinternPolishableTextarea
+          fieldPath={fieldPath}
+          field={field}
+          fieldValue={fieldValue}
+          handleChange={handleChange}
+          onChange={onChange}
+          error={error}
         />
       );
 
@@ -375,6 +378,76 @@ export function FieldRenderer({
         </div>
       );
   }
+}
+
+// ─── AINTERN ADDITION (Session 4) ───────────────────────────────────────────
+// Textarea with optional AI polish. Reads AiPolishContext; when absent,
+// behaves exactly like the upstream plain textarea.
+function AinternPolishableTextarea({ fieldPath, field, fieldValue, handleChange, onChange, error }) {
+  const ai = useContext(AiPolishContext);
+  const [busy, setBusy] = useState(false);
+  const [polishError, setPolishError] = useState(null);
+  const [prePolish, setPrePolish] = useState(null); // Session 5: undo
+
+  const doPolish = async () => {
+    if (!ai?.polish || !fieldValue?.trim()) return;
+    setBusy(true);
+    setPolishError(null);
+    const original = fieldValue;
+    const res = await ai.polish(fieldValue);
+    setBusy(false);
+    if (res?.success && res.text) {
+      setPrePolish(original);
+      onChange(fieldPath, res.text.trim());
+    } else {
+      setPolishError(res?.error || 'Polish failed');
+    }
+  };
+
+  const undoPolish = () => {
+    if (prePolish !== null) {
+      onChange(fieldPath, prePolish);
+      setPrePolish(null);
+    }
+  };
+
+  return (
+    <div>
+      <textarea
+        name={fieldPath}
+        value={fieldValue}
+        onChange={handleChange}
+        placeholder={field.placeholder || ''}
+        rows={field.rows || 4}
+        disabled={field.read_only || busy}
+        className={`w-full px-3 py-2 border rounded-md focus:ring-primary-500 focus:border-primary-500 ${
+          error ? 'border-red-500' : 'border-gray-300'
+        } ${busy ? 'opacity-60' : ''}`}
+      />
+      {ai?.polish && !field.read_only && (
+        <div className="flex items-center gap-2 mt-1">
+          <button
+            type="button"
+            onClick={doPolish}
+            disabled={busy || !fieldValue?.trim()}
+            className="text-xs font-medium px-2 py-1 rounded-md border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {busy ? 'Polishing…' : '✨ Polish with AI'}
+          </button>
+          {prePolish !== null && (
+            <button
+              type="button"
+              onClick={undoPolish}
+              className="text-xs font-medium px-2 py-1 rounded-md border border-gray-300 text-gray-600 hover:bg-gray-50"
+            >
+              ↩ Undo
+            </button>
+          )}
+          {polishError && <span className="text-xs text-red-600">{polishError}</span>}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default FieldRenderer;

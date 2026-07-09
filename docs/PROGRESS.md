@@ -1,13 +1,13 @@
 # AIntern — Development Progress Log
 
-**Last Updated:** July 9, 2026 — End of Session 3
+**Last Updated:** July 9, 2026 — End of Session 5
 
 ## 📊 OVERALL STATUS
 
 | Phase | Description | Status |
 |-------|-------------|--------|
 | Phase 0 | Foundation (seed, schema, AI gateway) | ✅ Complete — S1–S3 |
-| Phase 1 | Intern Logging Core | 📅 |
+| Phase 1 | Intern Logging Core | 🔄 S4–S5 done; S6 (submission flow) pending |
 | Phase 2 | Supervisor Loop (email links, snapshots, evaluations) | 📅 |
 | Phase 3 | Export & Premium (PDF logbook, AI form import) | 📅 |
 | Phase 4 | Monetization & Pilot | 📅 |
@@ -91,5 +91,50 @@ Dashboard → Project Settings → Edge Functions → Secrets:
 - Fix 3: client header rebranded `x-application-name: AIntern`.
 - ✅ **User-verified end-to-end:** secrets set, Gemini BYOK key saved → encrypted → listed masked in Profile → AI Assistant. BYOK tier proven.
 
-#### Next Session (S4 — Phase 1 begins)
-- Seed Daily Task Sheet template; DynamicForm integration; Dexie local persistence; today view + history strip. Wire the polish button to aiService.
+---
+
+### Session 4: Daily Log Core + AI Polish ✅
+**Date:** July 9, 2026
+
+#### Database
+- Migration `seed_daily_template` — `aintern-daily-log-v1` (public): Attendance (date/time in/time out/location), Tasks (category select, summary, outcomes, hours), Learning & Blockers. No photo/signature fields yet (arrive with submission flow, S6). `database/migrations/002_seed_daily_template.sql`.
+
+#### New
+- `src/services/offline/internDb.js` — clean Dexie v1: `dailyDrafts` (keyed by entry_date; one draft/day; statuses draft→ready→submitted→approved/rejected), `templateCache`.
+- `src/services/api/dailyLogService.js` — template fetch network-first with offline cache fallback; draft CRUD preserving `client_created_at` (late-flag authority).
+- `src/context/AiPolishContext.jsx` — opt-in bridge: pages provide `polish(text)`; engine textareas consume it.
+- `src/pages/log/DailyLogPage.jsx` — DynamicForm-rendered daily sheet; 800ms debounced autosave to Dexie; offline banner; status badge; read-only once submitted/approved; Save marks `ready`.
+- `src/pages/log/LogHistory.jsx` — local drafts list, status chips, tap-to-edit via `/log?date=`.
+
+#### Engine change (bounded, marked AINTERN)
+- `FieldRenderer.jsx` textarea case → `AinternPolishableTextarea`: renders identical to upstream when no AiPolishProvider is mounted; with provider, adds ✨ Polish with AI button (disabled while empty/busy, error inline).
+
+#### Changed
+- `router.jsx` — `/log` and `/history` now real pages (ComingSoon removed).
+- `InternHome.jsx` — "Start today's log" live.
+
+#### Verification
+- esbuild syntax pass on all 7 new/changed files; repo-wide null-byte scan clean.
+- Manual test checklist (user): create today's log → type rough notes in "What did you work on today?" → ✨ Polish (Gemini BYOK) → verify autosave chip → Save log → History shows entry `ready` → airplane mode → reopen /log → form loads from cache, edits persist.
+
+---
+
+### Session 5: Late Flags, Date Navigation, Polish Undo, Week Strip ✅
+**Date:** July 9, 2026
+
+All edits to existing files — no new modules, no schema changes. Graphify graph.json (built earlier today, 875 nodes) confirmed to cover all S4 modules before editing.
+
+#### Changed
+- `dailyLogService.saveDraft` — computes `late` flag: first save (device `client_created_at`) after the entry-date deadline (default 23:59, override via `internships.metadata.deadline_time` "HH:MM"). Offline-fair by design: sync time never matters.
+- `DailyLogPage` — ‹ › per-day navigation (future dates blocked); Late chip; deadline policy passed through; autosave now refreshes draft state.
+- `LogHistory` — orange `late` chip alongside status.
+- `FieldRenderer` (AINTERN block) — ↩ Undo restores pre-polish text after an AI polish.
+- `InternHome` — last-7-days strip (✓ logged / today ring / empty), "Not logged yet" nudge, button text adapts (Start/Continue).
+
+#### Verification
+- esbuild syntax pass on all 5 changed files; null-byte scan clean.
+- Note: existing drafts saved before S5 have no `late` field — they show as on-time (acceptable; flag recomputes on next save).
+- ⚠ Graphify: content changed in 5 files (no structural additions). Refresh at sign-off from Windows: `.\scripts\graphify.ps1` per AGENTS.md (PowerShell wrapper can't run in the Linux sandbox).
+
+#### Next Session (S6)
+- Submission flow: push `ready` drafts to `entry_submissions` (transient content upload), submission batching, intern-facing status sync back to Dexie. Groundwork for Phase 2 supervisor email links.

@@ -14,8 +14,22 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { internshipService } from '../../services/api/internshipService';
+import { dailyLogService } from '../../services/api/dailyLogService';
 import { useTerminology } from '../../hooks/useTerminology';
 import InternShell from '../../components/layout/InternShell';
+
+/** Last 7 calendar days, oldest first. */
+function lastSevenDays() {
+  const days = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    days.push(d.toISOString().split('T')[0]);
+  }
+  return days;
+}
+
+const DAY_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
 function daysBetween(a, b) {
   return Math.max(0, Math.round((b - a) / 86400000));
@@ -25,6 +39,7 @@ export default function InternHome() {
   const { profile, user } = useAuth();
   const [internship, setInternship] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loggedDates, setLoggedDates] = useState(new Set());
   const t = useTerminology(internship?.metadata?.terminology);
 
   useEffect(() => {
@@ -35,8 +50,14 @@ export default function InternHome() {
         setLoading(false);
       }
     });
+    dailyLogService.listDrafts().then((drafts) => {
+      if (mounted) setLoggedDates(new Set(drafts.map((d) => d.entry_date)));
+    });
     return () => { mounted = false; };
   }, []);
+
+  const today = new Date().toISOString().split('T')[0];
+  const todayLogged = loggedDates.has(today);
 
   const firstName =
     profile?.full_name?.split(' ')[0] || user?.email?.split('@')[0] || 'there';
@@ -101,17 +122,50 @@ export default function InternHome() {
 
             {/* ── Today's log ── */}
             <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-3">
-              <h3 className="font-semibold text-gray-900">Today's {t('entry')}</h3>
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold text-gray-900">Today's {t('entry')}</h3>
+                {!todayLogged && (
+                  <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-amber-100 text-amber-700">
+                    Not logged yet
+                  </span>
+                )}
+              </div>
+
+              {/* Session 5: last-7-days strip */}
+              <div className="flex justify-between px-1">
+                {lastSevenDays().map((date) => {
+                  const logged = loggedDates.has(date);
+                  const isToday = date === today;
+                  const letter = DAY_LETTERS[new Date(date + 'T12:00:00').getDay()];
+                  return (
+                    <Link key={date} to={`/log?date=${date}`} className="flex flex-col items-center gap-1">
+                      <span className="text-[10px] text-gray-400">{letter}</span>
+                      <span
+                        className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-medium border ${
+                          logged
+                            ? 'bg-emerald-100 text-emerald-700 border-emerald-200'
+                            : isToday
+                              ? 'bg-white text-slate-900 border-slate-900'
+                              : 'bg-gray-50 text-gray-300 border-gray-200'
+                        }`}
+                      >
+                        {logged ? '✓' : new Date(date + 'T12:00:00').getDate()}
+                      </span>
+                    </Link>
+                  );
+                })}
+              </div>
+
               <p className="text-sm text-gray-500">
-                {t('entry')} creation arrives with the next update — your{' '}
-                {t('placement').toLowerCase()} is ready and waiting.
+                Rough notes are fine — the ✨ AI polish button turns them into
+                formal logbook text.
               </p>
-              <button
-                disabled
-                className="w-full bg-gray-100 text-gray-400 rounded-lg py-3 font-medium cursor-not-allowed"
+              <Link
+                to="/log"
+                className="block text-center w-full bg-slate-900 text-white rounded-lg py-3 font-medium hover:bg-slate-700 transition-colors"
               >
-                Start today's {t('entry').toLowerCase()} (coming soon)
-              </button>
+                {todayLogged ? `Continue today's ${t('entry').toLowerCase()}` : `Start today's ${t('entry').toLowerCase()}`}
+              </Link>
             </div>
           </>
         )}

@@ -43,6 +43,16 @@ Before making changes:
 - **AI keys:** BYOK keys are Vault-encrypted, decrypted only inside Edge Functions, never logged, never sent to the client.
 - **Dev server port: 4900** (strict) — do not change.
 
+## Graphify Refresh (any OS)
+
+The engine is the PyPI package `graphifyy` — the `.ps1` is only a Windows launcher.
+
+- Windows: `.\scripts\graphify.ps1 update .`
+- Linux/macOS/Claude sandbox: `./scripts/graphify.sh update .`
+  (installs `graphifyy` on demand — sandbox filesystems are ephemeral, so the ~15s install repeats per session; the update itself takes ~8s)
+
+Refresh after meaningful structural changes. Claude CAN and SHOULD do this itself at session end.
+
 ## Commands
 
 - `npm run dev` (port 4900)
@@ -65,3 +75,29 @@ A task is complete when:
 ## Obsidian Rules
 
 Use Obsidian for architecture rationale, ADRs, cross-project standards, roadmap context, meeting notes, and research. Do not duplicate project implementation docs into Obsidian. Link to repository docs instead.
+
+<!-- AI-DEVELOPMENT-WORKSPACE-GRAPHIFY-OBSIDIAN -->
+
+## AI Development Workspace: Graphify + Obsidian
+
+This repository is part of the Effort Studio AI development workspace.
+
+Central Obsidian vault:
+
+~~~text
+C:\Users\user\Documents\00 AI agent\AI-Knowledge
+~~~
+
+Use Graphify for code navigation:
+
+~~~powershell
+.\scripts\graphify.ps1 query "question" --graph "graphify-out\graph.json"
+.\scripts\graphify.ps1 explain "symbol-or-file" --graph "graphify-out\graph.json"
+.\scripts\graphify.ps1 path "A" "B" --graph "graphify-out\graph.json"
+~~~
+
+Use Obsidian only for architecture rationale, ADRs, roadmap context, research, meetings, and cross-project decisions. Project-specific implementation docs remain in this repository.
+
+Before editing, read AGENTS.md, read CLAUDE.md if relevant, read docs/AINTERN_PROJECT_PLAN.md and docs/PROGRESS.md, query Graphify if graphify-out/graph.json exists, then inspect source files directly.
+
+Current Graphify scope: src, database/migrations, and supabase/functions.
