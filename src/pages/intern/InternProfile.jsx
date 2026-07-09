@@ -1,20 +1,27 @@
 /**
  * AIntern - Intern Profile
  *
- * View/edit profile fields (profiles table) and internship review
- * settings (cadence, digest mode). Replaces WorkLedger's ProfilePage,
- * which depended on organization membership.
+ * View/edit profile fields (profiles table), internship review settings
+ * (cadence, digest mode), and AI Assistant BYOK keys (Session 3).
  *
  * @file src/pages/intern/InternProfile.jsx
  * @created July 9, 2026 - Session 2
+ * @updated July 9, 2026 - Session 3: AI BYOK section
  */
 
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { internshipService } from '../../services/api/internshipService';
+import { aiService } from '../../services/api/aiService';
 import { PLATFORM } from '../../config/platform';
 import InternShell from '../../components/layout/InternShell';
+
+const AI_PROVIDERS = [
+  { value: 'openai', label: 'OpenAI' },
+  { value: 'anthropic', label: 'Anthropic (Claude)' },
+  { value: 'gemini', label: 'Google Gemini' },
+];
 
 const inputCls =
   'w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-800 focus:border-transparent';
@@ -30,6 +37,12 @@ export default function InternProfile() {
   const [internship, setInternship] = useState(null);
   const [saving, setSaving] = useState(false);
 
+  // AI BYOK state
+  const [aiProvider, setAiProvider] = useState('openai');
+  const [aiKey, setAiKey] = useState('');
+  const [savedKeys, setSavedKeys] = useState([]);
+  const [aiSaving, setAiSaving] = useState(false);
+
   useEffect(() => {
     if (profile) {
       setFields({
@@ -43,6 +56,9 @@ export default function InternProfile() {
 
   useEffect(() => {
     internshipService.getMyInternship().then(({ data }) => setInternship(data));
+    aiService.listKeys().then((res) => {
+      if (res.success) setSavedKeys(res.keys ?? []);
+    });
   }, []);
 
   const set = (key) => (e) => setFields((f) => ({ ...f, [key]: e.target.value }));
@@ -60,6 +76,30 @@ export default function InternProfile() {
     if (res.success) {
       setInternship(res.data);
       toast.success('Setting updated');
+    } else {
+      toast.error(res.error);
+    }
+  };
+
+  const saveAiKey = async () => {
+    setAiSaving(true);
+    const res = await aiService.saveKey(aiProvider, aiKey.trim());
+    setAiSaving(false);
+    if (res.success) {
+      setAiKey('');
+      toast.success('Key saved securely');
+      const list = await aiService.listKeys();
+      if (list.success) setSavedKeys(list.keys ?? []);
+    } else {
+      toast.error(res.error);
+    }
+  };
+
+  const removeAiKey = async (provider) => {
+    const res = await aiService.deleteKey(provider);
+    if (res.success) {
+      setSavedKeys((k) => k.filter((x) => x.provider !== provider));
+      toast.success('Key removed');
     } else {
       toast.error(res.error);
     }
@@ -134,6 +174,64 @@ export default function InternProfile() {
             </div>
           </section>
         )}
+
+        {/* AI Assistant (BYOK) */}
+        <section className="bg-white rounded-xl border border-gray-200 p-5 space-y-3">
+          <h2 className="font-semibold text-gray-900">AI Assistant</h2>
+          <p className="text-xs text-gray-500">
+            Add your own AI key for unlimited polishing (free tiers work great),
+            or use the built-in AI with a monthly quota. Keys are encrypted and
+            never shown again.
+          </p>
+
+          {savedKeys.length > 0 && (
+            <ul className="space-y-2">
+              {savedKeys.map((k) => (
+                <li
+                  key={k.provider}
+                  className="flex items-center justify-between rounded-lg border border-gray-200 px-3 py-2"
+                >
+                  <span className="text-sm text-gray-700 capitalize">
+                    {k.provider} · ••••••••
+                  </span>
+                  <button
+                    onClick={() => removeAiKey(k.provider)}
+                    className="text-xs text-red-600 font-medium hover:text-red-700"
+                  >
+                    Remove
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <div className="grid grid-cols-3 gap-2">
+            <select
+              className={inputCls + ' col-span-1'}
+              value={aiProvider}
+              onChange={(e) => setAiProvider(e.target.value)}
+            >
+              {AI_PROVIDERS.map((p) => (
+                <option key={p.value} value={p.value}>{p.label}</option>
+              ))}
+            </select>
+            <input
+              type="password"
+              className={inputCls + ' col-span-2'}
+              value={aiKey}
+              onChange={(e) => setAiKey(e.target.value)}
+              placeholder="Paste API key"
+              autoComplete="off"
+            />
+          </div>
+          <button
+            onClick={saveAiKey}
+            disabled={aiSaving || aiKey.trim().length < 10}
+            className="w-full bg-slate-900 text-white rounded-lg py-2.5 font-medium disabled:bg-gray-300 hover:bg-slate-700 transition-colors"
+          >
+            {aiSaving ? 'Saving…' : 'Save key'}
+          </button>
+        </section>
       </div>
     </InternShell>
   );

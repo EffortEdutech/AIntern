@@ -1,12 +1,12 @@
 # AIntern — Development Progress Log
 
-**Last Updated:** July 9, 2026 — End of Session 2
+**Last Updated:** July 9, 2026 — End of Session 3
 
 ## 📊 OVERALL STATUS
 
 | Phase | Description | Status |
 |-------|-------------|--------|
-| Phase 0 | Foundation (seed, schema, AI gateway) | 🔄 S1–S2 done, S3 (AI gateway) pending |
+| Phase 0 | Foundation (seed, schema, AI gateway) | ✅ Complete — S1–S3 |
 | Phase 1 | Intern Logging Core | 📅 |
 | Phase 2 | Supervisor Loop (email links, snapshots, evaluations) | 📅 |
 | Phase 3 | Export & Premium (PDF logbook, AI form import) | 📅 |
@@ -62,5 +62,32 @@
 - esbuild syntax check passed on all 13 new/changed files (full `npm run build` to be run locally — sandbox can't persist node_modules).
 - Known deferred: OfflineContext still references WorkLedger Dexie schema — harmless at boot (empty queue); rewritten in Phase 1 (S4).
 
-#### Next Session (S3)
-- `ai-gateway` Edge Function: provider abstraction (OpenAI default / Anthropic / Gemini), BYOK key encrypt/decrypt via Vault, `ai_usage` metering, tier resolution.
+---
+
+### Session 3: AI Gateway (Dual-Tier) ✅
+**Date:** July 9, 2026
+
+#### New
+- `supabase/functions/ai-gateway/index.ts` — deployed (v1, ACTIVE, verify_jwt on):
+  - Actions: `save_key` / `delete_key` / `list_keys` / `generate`.
+  - BYOK keys AES-GCM encrypted (key derived from `AINTERN_KEY_ENCRYPTION_SECRET`); decrypt only in-function; ciphertext in `ai_credentials`.
+  - Providers: OpenAI (gpt-4o-mini, default), Anthropic (claude-haiku-4-5), Gemini (gemini-2.0-flash) behind one abstraction.
+  - Tier resolution: BYOK if the user has a key for the requested provider, else bundled (platform OpenAI key) with monthly token cap + `ai_usage` metering. BYOK is unmetered (user-billed).
+  - Server-side feature prompts: `polish` (log writing assistant), `eval_comment` (Phase 2).
+  - Caps: per-request `min(AINTERN_PER_REQUEST_MAX_TOKENS, 2000)` output tokens; monthly default 100k (tune after pilot telemetry).
+- `src/services/api/aiService.js` — client wrapper (functions.invoke; keys never returned to client).
+- InternProfile → new "AI Assistant" section: save/remove BYOK keys per provider (masked list).
+
+#### ⚠ Required before AI works — set Edge Function secrets
+Dashboard → Project Settings → Edge Functions → Secrets:
+- `AINTERN_KEY_ENCRYPTION_SECRET` = long random string (e.g. 64 hex chars) — NEVER rotate casually; rotating invalidates all stored BYOK keys.
+- `OPENAI_API_KEY` = platform key for the bundled tier (optional until bundled tier is offered; BYOK works without it).
+- Optional: `AINTERN_BUNDLED_MONTHLY_TOKEN_CAP`, `AINTERN_PER_REQUEST_MAX_TOKENS`.
+
+#### Verification
+- Function deployed via MCP, status ACTIVE, JWT verification enforced platform-side.
+- esbuild syntax checks pass (index.ts, aiService.js, InternProfile.jsx); no null-byte artifacts.
+- End-to-end test (save key → polish text) requires secrets set — first item of Session 4.
+
+#### Next Session (S4 — Phase 1 begins)
+- Seed Daily Task Sheet template; DynamicForm integration; Dexie local persistence; today view + history strip. Wire the polish button to aiService.
