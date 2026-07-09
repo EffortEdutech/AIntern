@@ -65,7 +65,19 @@ class SubmissionService {
     if (!existing.success) {
       return { success: false, entryDate: draft.entry_date, error: existing.error };
     }
-    if (existing.data) {
+    if (existing.data && existing.data.status === 'rejected') {
+      // Session 6 review fix: resubmission — clear the rejected row
+      // (owner delete policy, migration 003) so a fresh insert can follow.
+      const { error: clearError } = await supabase
+        .from('entry_submissions')
+        .delete()
+        .eq('id', existing.data.id)
+        .eq('internship_id', internshipId)
+        .eq('status', 'rejected');
+      if (clearError) {
+        return { success: false, entryDate: draft.entry_date, error: clearError.message };
+      }
+    } else if (existing.data) {
       const local = await dailyLogService.markSubmitted(draft.entry_date, existing.data);
       return {
         success: true,

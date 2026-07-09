@@ -77,6 +77,7 @@ class DailyLogService {
       ? new Date(clientCreatedAt) > deadline
       : false;
     const record = {
+      ...existing,
       entry_date: entryDate,
       data,
       status,
@@ -112,6 +113,19 @@ class DailyLogService {
     const existing = await internDb.dailyDrafts.get(entryDate);
     if (!existing) {
       return null;
+    }
+
+    // Session 6 review fix: if the intern has already revised a rejected
+    // log back to 'ready' (or is re-drafting it), a status sync must not
+    // clobber that revision with the stale server 'rejected' row.
+    if (
+      submission.status === 'rejected' &&
+      ['ready', 'draft'].includes(existing.status) &&
+      existing.updated_at &&
+      submission.resolved_at &&
+      new Date(existing.updated_at) > new Date(submission.resolved_at)
+    ) {
+      return existing;
     }
 
     const status = submission.status === 'approved' || submission.status === 'rejected'

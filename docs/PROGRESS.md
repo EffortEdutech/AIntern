@@ -1,5 +1,7 @@
 # AIntern — Development Progress Log
 
+<!-- Session 6 review addendum appended July 10, 2026 — see below -->
+
 **Last Updated:** July 9, 2026 — End of Session 6
 
 ## 📊 OVERALL STATUS
@@ -141,27 +143,22 @@ All edits to existing files — no new modules, no schema changes. Graphify grap
 ### Session 6: Submission Flow + Batch Queue ✅
 **Date:** July 9, 2026
 
-No schema changes. Uses existing `entry_submissions` owner RLS: interns insert/read/delete their own pending submissions; approvals/rejections remain service-role-only for Phase 2.
+No schema changes. Uses existing `entry_submissions` owner RLS
+---
 
-#### New
-- `src/services/api/submissionService.js` — authenticated submission API:
-  - inserts ready Dexie drafts into `entry_submissions` with `status = 'pending'`;
-  - detects existing same-date submissions instead of upserting (keeps RLS narrow; no intern UPDATE policy needed);
-  - syncs readable submission status (`pending`/`approved`/`rejected`) back into Dexie;
-  - withdraws still-pending submissions via the existing owner delete policy.
+### Session 6 Review Addendum (Claude) ✅
+**Date:** July 10, 2026
 
-#### Changed
-- `dailyLogService` — added helpers for selected ready drafts, marking local drafts submitted/approved/rejected, and reopening withdrawn drafts to `ready`.
-- `DailyLogPage` — "Save log" renamed to "Save as ready"; copy now points interns to History for online submission; submitted logs show supervisor comments when present.
-- `LogHistory` — now doubles as the batch submission workspace:
-  - select all ready logs or pick individual ready logs;
-  - submit selected logs to Supabase when online;
-  - sync review status from `entry_submissions`;
-  - withdraw still-pending submissions back to ready.
+Code review of the Session 6 submission flow. Overall: clean implementation, correct security posture (insert-only intern writes, no service-role in client, withdraw scoped by owner RLS). Two findings, both fixed:
 
-#### Verification
-- `npm run build` passed.
-- Build note: Browserslist/caniuse-lite warning is informational; no action taken.
+1. **Rejected logs could never be resubmitted** — `submitDraft` treated any existing server row as `alreadySubmitted`, flipping a revised local `ready` draft straight back to `rejected`; the unique `(internship_id, entry_date)` constraint blocked re-insert and the delete policy only covered `pending`.
+   **Fix:** migration `003_allow_rejected_resubmission` (owner delete policy now covers `pending` + `rejected`; applied to live DB) + resubmit branch in `submissionService.submitDraft` (clear rejected row → fresh insert). Approved rows remain untouchable; `approved_snapshots` stays the immutable audit authority.
+2. **Status sync could clobber an in-progress revision** — a sync while a rejected log was re-edited to `ready` overwrote it back to `rejected`.
+   **Fix:** guard in `dailyLogService.markSubmitted` — a server `rejected` row never overwrites a local `ready`/`draft` revision newer than the rejection's `resolved_at`.
+3. Bonus fix while reconstructing: `saveDraft` now spreads `...existing`, so autosaves no longer drop `submission_id`/`supervisor_comment`/`submitted_at` from synced drafts.
 
-#### Next Session (S7)
-- Token service + email sending: issue scoped supervisor links for pending `entry_submissions`, send via Resend/SMTP Edge Function, and prepare digest/cadence scheduling.
+Verification: host-side file integrity confirmed, esbuild syntax pass on both services, migration applied via MCP. ⚠ Tooling note: the sandbox mount served a stale truncated view of dailyLogService.js during patching — file was reconstructed host-side; always verify tails via host tools after bash-side edits.
+
+**Resubmission test path:** reject a submission (SQL editor: `update entry_submissions set status='rejected', supervisor_comment='test', resolved_at=now() where entry_date='...'`) → sync in History → open log, edit, Save as ready → submit again → server row should be fresh `pending`.
+
+**Next (S7 — Phase 2 begins):** approval token service + email delivery (Resend), supervisor review page.
