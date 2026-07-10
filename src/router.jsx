@@ -36,6 +36,7 @@ const Onboarding    = lazy(() => import('./pages/onboarding/Onboarding'));
 const DailyLogPage  = lazy(() => import('./pages/log/DailyLogPage'));
 const LogHistory    = lazy(() => import('./pages/log/LogHistory'));
 const LogbookPage   = lazy(() => import('./pages/logbook/LogbookPage'));
+const TemplateStudioPage = lazy(() => import('./pages/studio/TemplateStudioPage'));
 
 // Public supervisor page — token-gated inside the page/Edge Function,
 // deliberately NOT wrapped in <Auth> (supervisors have no accounts).
@@ -71,6 +72,7 @@ export const router = createBrowserRouter([
   { path: '/log',     element: <Auth><DailyLogPage /></Auth> },
   { path: '/history', element: <Auth><LogHistory /></Auth> },
   { path: '/logbook', element: <Auth><LogbookPage /></Auth> },
+  { path: '/template-studio', element: <Auth><TemplateStudioPage /></Auth> },
 
   // ── 404 ─────────────────────────────────────────────────────────────
   { path: '*', element: <NotFoundPage /> }

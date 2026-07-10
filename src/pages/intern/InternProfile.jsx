@@ -10,6 +10,7 @@
  */
 
 import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { internshipService } from '../../services/api/internshipService';
@@ -230,6 +231,22 @@ export default function InternProfile() {
             </div>
           </section>
         )}
+
+        {/* Logbook format (Session 11) */}
+        <section className="bg-white rounded-xl border border-gray-200 p-5 space-y-2">
+          <h2 className="font-semibold text-gray-900">Logbook format</h2>
+          <p className="text-xs text-gray-500">
+            {internship?.daily_template_id
+              ? 'Using a custom format imported from your institution\'s form.'
+              : 'Using the default AIntern daily log format.'}
+          </p>
+          <Link
+            to="/template-studio"
+            className="block text-center w-full border border-slate-300 text-slate-800 rounded-lg py-2.5 font-medium hover:bg-slate-50 transition-colors"
+          >
+            ✨ Open Template Studio
+          </Link>
+        </section>
 
         {/* AI Assistant (BYOK) */}
         <section className="bg-white rounded-xl border border-gray-200 p-5 space-y-3">

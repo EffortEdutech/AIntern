@@ -57,7 +57,7 @@ export default function LogbookPage() {
   const exportPdf = async () => {
     setExporting(true);
     try {
-      const tpl = await dailyLogService.getDailyTemplate();
+      const tpl = await dailyLogService.getDailyTemplate(internship);
       const { generateLogbookPdf } = await import('../../services/pdf/logbookPdf');
       generateLogbookPdf({
         profile,

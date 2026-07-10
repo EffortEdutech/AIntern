@@ -62,11 +62,12 @@ export default function DailyLogPage() {
   useEffect(() => {
     let mounted = true;
     (async () => {
-      const [tpl, existing, { data: itn }] = await Promise.all([
-        dailyLogService.getDailyTemplate(),
+      const [existing, { data: itn }] = await Promise.all([
         dailyLogService.getDraft(entryDate),
         internshipService.getMyInternship()
       ]);
+      // Session 11: template choice depends on the internship (custom format)
+      const tpl = await dailyLogService.getDailyTemplate(itn);
       if (!mounted) {
         return;
       }

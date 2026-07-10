@@ -21,27 +21,40 @@ function todayStr() {
 class DailyLogService {
   /**
    * Fetch the daily log template — network first, Dexie cache fallback.
+   * Session 11: when the internship has a custom template assigned
+   * (daily_template_id via AI Template Studio), that one wins.
    */
-  async getDailyTemplate() {
+  async getDailyTemplate(internship = null) {
+    const customId = internship?.daily_template_id ?? null;
     try {
-      const { data, error } = await supabase
-        .from('templates')
-        .select('*')
-        .eq('template_id', DAILY_TEMPLATE_ID)
-        .maybeSingle();
+      let query = supabase.from('templates').select('*');
+      query = customId
+        ? query.eq('id', customId)
+        : query.eq('template_id', DAILY_TEMPLATE_ID);
+      const { data, error } = await query.maybeSingle();
 
       if (!error && data) {
         await internDb.templateCache.put({
-          template_id: DAILY_TEMPLATE_ID,
+          template_id: data.template_id,
           template: data,
           cached_at: new Date().toISOString()
         });
+        // Remember which template this internship uses, for offline lookup
+        if (customId) {
+          await internDb.templateCache.put({
+            template_id: `active-${customId}`,
+            template: data,
+            cached_at: new Date().toISOString()
+          });
+        }
         return { success: true, data, fromCache: false };
       }
       throw new Error(error?.message || 'Template not found online');
     } catch {
       // Offline (or fetch failed) — use cache
-      const cached = await internDb.templateCache.get(DAILY_TEMPLATE_ID);
+      const cacheKey = customId ? `active-${customId}` : DAILY_TEMPLATE_ID;
+      const cached = await internDb.templateCache.get(cacheKey)
+        ?? (customId ? null : await internDb.templateCache.get(DAILY_TEMPLATE_ID));
       if (cached?.template) {
         return { success: true, data: cached.template, fromCache: true };
       }

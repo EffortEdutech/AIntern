@@ -191,6 +191,159 @@ const PROVIDERS: Record<string, typeof callOpenAI> = {
   gemini: callGemini,
 };
 
+// ─── Template import (Session 11): prompt, vision calls, sanitizer ───────
+
+const IMPORT_PROMPT = [
+  'You are analyzing a scanned or photographed internship logbook / daily report form.',
+  'Extract its structure as STRICT JSON (no markdown fences, no commentary):',
+  '{"template_name": string, "sections": [{"section_id": snake_case string, "section_name": string,',
+  '"fields": [{"field_id": snake_case string, "field_name": string,',
+  '"field_type": one of "text"|"textarea"|"number"|"date"|"time"|"select"|"radio"|"checkbox",',
+  '"required": boolean, "options": string[] (only for select/radio), "rows": number (only for textarea)}]}]}.',
+  'Rules: long writing areas are "textarea"; date fields "date"; time fields "time"; rating scales or',
+  'checklists with fixed choices are "select" or "radio" with their options; signature areas, logos,',
+  'page headers/footers, and approval stamps are NOT fields - skip them.',
+  'Keep the original language of the form labels. Maximum 8 sections, 15 fields per section.',
+].join(' ');
+
+const ALLOWED_FIELD_TYPES = new Set(['text', 'textarea', 'number', 'date', 'time', 'select', 'radio', 'checkbox']);
+
+function slug(input: string, fallback: string): string {
+  const s = String(input ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40);
+  return s || fallback;
+}
+
+/** Server-side authority: AI output never reaches the form engine unvalidated. */
+function sanitizeTemplate(raw: Record<string, unknown>) {
+  const sections = (Array.isArray(raw?.sections) ? raw.sections : []).slice(0, 8);
+  const outSections = [];
+  const seenSectionIds = new Set<string>();
+  sections.forEach((sec: Record<string, unknown>, si: number) => {
+    const name = String(sec?.section_name ?? '').trim().slice(0, 80);
+    if (!name) return;
+    let sid = slug(String(sec?.section_id ?? name), `section_${si + 1}`);
+    while (seenSectionIds.has(sid)) sid += '_x';
+    seenSectionIds.add(sid);
+    const fields = [];
+    const seenFieldIds = new Set<string>();
+    (Array.isArray(sec?.fields) ? sec.fields : []).slice(0, 15).forEach((f: Record<string, unknown>, fi: number) => {
+      const fname = String(f?.field_name ?? '').trim().slice(0, 120);
+      if (!fname) return;
+      let fid = slug(String(f?.field_id ?? fname), `field_${fi + 1}`);
+      while (seenFieldIds.has(fid)) fid += '_x';
+      seenFieldIds.add(fid);
+      let ftype = String(f?.field_type ?? 'text');
+      if (!ALLOWED_FIELD_TYPES.has(ftype)) ftype = 'text';
+      const field: Record<string, unknown> = {
+        field_id: fid,
+        field_name: fname,
+        field_type: ftype,
+        required: Boolean(f?.required),
+      };
+      if (['select', 'radio'].includes(ftype)) {
+        const opts = (Array.isArray(f?.options) ? f.options : [])
+          .map((o) => String(o).trim().slice(0, 60)).filter(Boolean).slice(0, 12);
+        if (opts.length === 0) { field.field_type = 'text'; } else { field.options = opts; }
+      }
+      if (ftype === 'textarea') field.rows = Math.min(Math.max(Number(f?.rows) || 3, 2), 8);
+      fields.push(field);
+    });
+    if (fields.length > 0) outSections.push({ section_id: sid, section_name: name, fields });
+  });
+  if (outSections.length === 0) return null;
+  return {
+    template_name: String(raw?.template_name ?? 'Imported form').trim().slice(0, 100) || 'Imported form',
+    fields_schema: { sections: outSections },
+  };
+}
+
+function parseModelJson(text: string): Record<string, unknown> | null {
+  const cleaned = text.trim().replace(/^```(json)?/i, '').replace(/```$/, '').trim();
+  const start = cleaned.indexOf('{');
+  const end = cleaned.lastIndexOf('}');
+  if (start === -1 || end <= start) return null;
+  try { return JSON.parse(cleaned.slice(start, end + 1)); } catch { return null; }
+}
+
+async function visionOpenAI(key: string, system: string, mime: string, b64: string, maxTokens: number): Promise<AiResult> {
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+    body: JSON.stringify({
+      model: 'gpt-4o-mini',
+      max_tokens: maxTokens,
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: [
+          { type: 'text', text: 'Extract the form structure from this document.' },
+          { type: 'image_url', image_url: { url: `data:${mime};base64,${b64}` } },
+        ] },
+      ],
+    }),
+  });
+  if (!res.ok) throw new Error(`OpenAI ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  const data = await res.json();
+  return {
+    text: data.choices?.[0]?.message?.content ?? '',
+    tokensIn: data.usage?.prompt_tokens ?? 0,
+    tokensOut: data.usage?.completion_tokens ?? 0,
+  };
+}
+
+async function visionAnthropic(key: string, system: string, mime: string, b64: string, maxTokens: number): Promise<AiResult> {
+  const block = mime === 'application/pdf'
+    ? { type: 'document', source: { type: 'base64', media_type: mime, data: b64 } }
+    : { type: 'image', source: { type: 'base64', media_type: mime, data: b64 } };
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+    body: JSON.stringify({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: maxTokens,
+      system,
+      messages: [{ role: 'user', content: [block, { type: 'text', text: 'Extract the form structure from this document.' }] }],
+    }),
+  });
+  if (!res.ok) throw new Error(`Anthropic ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  const data = await res.json();
+  return {
+    text: data.content?.[0]?.text ?? '',
+    tokensIn: data.usage?.input_tokens ?? 0,
+    tokensOut: data.usage?.output_tokens ?? 0,
+  };
+}
+
+async function visionGemini(key: string, system: string, mime: string, b64: string, maxTokens: number): Promise<AiResult> {
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: system }] },
+        contents: [{ role: 'user', parts: [
+          { inline_data: { mime_type: mime, data: b64 } },
+          { text: 'Extract the form structure from this document.' },
+        ] }],
+        generationConfig: { maxOutputTokens: maxTokens },
+      }),
+    },
+  );
+  if (!res.ok) throw new Error(`Gemini ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  const data = await res.json();
+  return {
+    text: data.candidates?.[0]?.content?.parts?.[0]?.text ?? '',
+    tokensIn: data.usageMetadata?.promptTokenCount ?? 0,
+    tokensOut: data.usageMetadata?.candidatesTokenCount ?? 0,
+  };
+}
+
+const VISION_PROVIDERS: Record<string, typeof visionOpenAI> = {
+  openai: visionOpenAI,
+  anthropic: visionAnthropic,
+  gemini: visionGemini,
+};
+
 // ─── Metering ─────────────────────────────────────────────────────────────
 
 async function monthlyUsage(userId: string): Promise<number> {
@@ -337,6 +490,78 @@ Deno.serve(async (req) => {
         provider,
         tokens: { in: result.tokensIn, out: result.tokensOut },
       });
+    }
+
+    // ── import_form (Session 11): logbook photo/PDF → template draft ──
+    if (action === 'import_form') {
+      const mime = String(body.mime ?? '');
+      const b64 = String(body.file_base64 ?? '');
+      const requestedProvider = String(body.provider ?? 'openai');
+      const ALLOWED_MIMES = ['image/png', 'image/jpeg', 'image/webp', 'application/pdf'];
+      if (!ALLOWED_MIMES.includes(mime)) {
+        return json({ success: false, error: 'Upload a PNG/JPG photo or a PDF of the form.' }, 400);
+      }
+      if (!b64 || b64.length > 8_000_000) {
+        return json({ success: false, error: 'File too large — keep it under ~5 MB.' }, 400);
+      }
+
+      // Tier resolution (same as generate)
+      const { data: cred } = await admin
+        .from('ai_credentials')
+        .select('provider, encrypted_key')
+        .eq('user_id', user.id)
+        .eq('provider', requestedProvider)
+        .maybeSingle();
+
+      let tier: 'byok' | 'bundled';
+      let provider: string;
+      let key2: string;
+      if (cred?.encrypted_key) {
+        if (!ENC_SECRET) return json({ success: false, error: 'Server missing encryption secret' }, 500);
+        tier = 'byok';
+        provider = cred.provider;
+        key = await decrypt(cred.encrypted_key);
+      } else {
+        if (!PLATFORM_OPENAI_KEY) {
+          return json({ success: false, error: 'No AI key available. Add your own key in Profile → AI Assistant.' }, 402);
+        }
+        const used = await monthlyUsage(user.id);
+        if (used >= MONTHLY_CAP) {
+          return json({ success: false, error: `Monthly AI quota reached (${MONTHLY_CAP} tokens).` }, 429);
+        }
+        tier = 'bundled';
+        provider = 'openai';
+        key = PLATFORM_OPENAI_KEY;
+      }
+
+      if (mime === 'application/pdf' && provider === 'openai') {
+        return json({
+          success: false,
+          error: 'PDF import needs a Gemini or Claude key (Profile → AI Assistant) — or upload a photo/screenshot of the form instead.',
+        }, 400);
+      }
+
+      const result = await VISION_PROVIDERS[provider](key, IMPORT_PROMPT, mime, b64, 4000);
+      if (tier === 'bundled') {
+        await admin.from('ai_usage').insert({
+          user_id: user.id,
+          feature: 'template_import',
+          provider: provider,
+          tokens_in: result.tokensIn,
+          tokens_out: result.tokensOut,
+        });
+      }
+
+      const parsed = parseModelJson(result.text);
+      const sanitized = parsed ? sanitizeTemplate(parsed) : null;
+      if (!sanitized) {
+        return json({
+          success: false,
+          error: 'Could not read a form structure from that file. Try a clearer photo (whole page, good lighting).',
+        }, 422);
+      }
+
+      return json({ success: true, template: sanitized, tier: tier, provider: provider });
     }
 
     return json({ success: false, error: 'Unknown action' }, 400);
