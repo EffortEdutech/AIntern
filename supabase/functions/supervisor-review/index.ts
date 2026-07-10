@@ -40,7 +40,16 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY') ?? '';
-const APP_URL = (Deno.env.get('AINTERN_APP_URL') ?? 'http://localhost:4900').replace(/\/$/, '');
+const APP_URL_ENV = (Deno.env.get('AINTERN_APP_URL') ?? '').replace(/\/$/, '');
+
+/** Review-link base URL: explicit secret wins; otherwise the calling
+ *  app's Origin (self-configuring for Vercel + localhost); last resort dev. */
+function appUrl(req: Request): string {
+  if (APP_URL_ENV) return APP_URL_ENV;
+  const origin = req.headers.get('origin') ?? '';
+  if (/^https?:\/\//.test(origin)) return origin.replace(/\/$/, '');
+  return 'http://localhost:4900';
+}
 const EMAIL_FROM = Deno.env.get('AINTERN_EMAIL_FROM') ?? 'AIntern <onboarding@resend.dev>';
 const TOKEN_TTL_DAYS = 7;
 
@@ -237,7 +246,7 @@ Deno.serve(async (req) => {
       });
       if (tokenErr) return json({ success: false, error: tokenErr.message }, 500);
 
-      const link = `${APP_URL}/review?token=${raw}`;
+      const link = `${appUrl(req)}/review?token=${raw}`;
       const count = (pending ?? []).length;
       const parts = [];
       if (count > 0) parts.push(`${count} daily log${count === 1 ? '' : 's'} awaiting your review`);

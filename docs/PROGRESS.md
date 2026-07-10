@@ -2,7 +2,7 @@
 
 <!-- Session 6 review addendum appended July 10, 2026 — see below -->
 
-**Last Updated:** July 10, 2026 — End of Session 11
+**Last Updated:** July 11, 2026 — v1.1 R1 complete
 
 ## 📊 OVERALL STATUS
 
@@ -12,7 +12,10 @@
 | Phase 1 | Intern Logging Core | ✅ Complete — S4–S6 |
 | Phase 2 | Supervisor Loop (email links, snapshots, evaluations) | ✅ Core complete — S7–S9 |
 | Phase 3 | Export & Premium (PDF logbook, AI form import) | ✅ Complete — S10–S11 |
-| Phase 4 | Monetization & Pilot | 📅 Next — after user e2e test + polish |
+| v1.0 e2e pilot | User end-to-end test | ✅ Completed July 11 |
+| **v1.1 R1** | Report versions + Verification IDs + Ready Check | ✅ Complete |
+| v1.1 R2–R5 | Presentation templates/HTML preview → DOCX+QR verify → multi-reviewer → portfolio | 📅 |
+| Phase 4 | Monetization & Pilot | 📅 |
 
 ---
 
@@ -269,3 +272,36 @@ Files: InternProfile.jsx (295 lines), LogHistory.jsx (319 lines) — patched via
 - **Q from testing:** "Submit selected" vs "Email my supervisor" — Submit uploads selected ready logs to the server review queue; Email creates the secure one-time link covering everything pending and delivers it. Two steps so daily submissions don't spam the supervisor; digest mode "Every submission" merges them.
 - **Fix:** RESEND_API_KEY missing no longer blocks the flow. `supervisor-review` v2 (deployed): when email is unconfigured (or `share_mode:'link'`), `request_review` still creates the secure token and returns `review_link`; LogHistory offers it via the phone's native share sheet (WhatsApp) or copies to clipboard. Implements plan §9.3 (WhatsApp fallback for MY deliverability). Same token security — email was delivery, never auth.
 - Gmail SMTP rejected as test path: Edge runtime has no raw TCP; Gmail REST API needs a GCloud OAuth setup far heavier than Resend's 2-minute signup. Resend remains the production path.
+                                          
+---
+
+### Fix: review links pointed to localhost (user testing) ✅
+**Date:** July 10, 2026
+
+- Cause: `AINTERN_APP_URL` secret never set → fallback `http://localhost:4900`.
+- Fix (supervisor-review v3, deployed): link base URL now resolves **per request** — explicit `AINTERN_APP_URL` secret wins if set; otherwise the calling app's `Origin` header (self-configuring: Vercel requests produce Vercel links, localhost produces localhost); dev fallback last. No secret required anymore.
+- Note for later (cron digests): scheduled sends have no Origin — set `AINTERN_APP_URL` before enabling cron in polish phase.
+- Old localhost-links: superseded — requesting a new review link revokes prior tokens automatically.
+
+---
+
+## v1.1 UPGRADE TRACK (spec: docs/AIntern New Engine Specification (Version 1.1).md)
+
+Assessment: the v1.1 spec formalizes v1.0's trust model (single source of truth, immutable snapshots, disposable exports, review≠evaluation). Increments: R1 report versioning+ready check → R2 presentation templates + HTML preview (revive parked WorkLedger render engine) → R3 DOCX + verification appendix + QR /verify page → R4 configurable multi-reviewer workflows (industry + educational supervisor) → R5 Portfolio Engine.
+
+### R1: Report Versions + Ready Check ✅
+**Date:** July 11, 2026
+
+#### Database (migrations 004 + revoke_anon_report_snapshot, applied)
+- `report_versions` — immutable (trigger), numbered per internship+type ('logbook','weekly','monthly','final'), owner SELECT only. Content freezes: intern/internship info, template (labels travel with snapshot), approved entries WITH their existing hashes+signatures (evidence layer), evaluations, stats; plus sha256 `content_hash`.
+- `create_report_snapshot()` RPC — SECURITY DEFINER, the ONLY write path: verified status computed server-side (≥1 approved entry AND 0 pending in period ⇒ 'verified' + permanent Verification ID `AIN-XXXX-XXXX`); clients can never mint 'verified'. anon revoked (advisor 0028); authenticated execution intentional (internal auth.uid() ownership check) — advisor 0029 WARN accepted by design.
+
+#### Client
+- `src/services/api/reportVersionService.js` — listVersions/getVersion/createSnapshot (RPC) + deterministic **Ready Check** (§28): unsubmitted local drafts, rejected-unrevised, pending reviews (blocking), zero approved entries (blocking), weekday coverage gaps, evaluation cadence shortfall. (Named to leave parked WorkLedger reportService.js untouched.)
+- `LogbookPage` v1.1 — Official versions card: Ready Check panel (blocking red / warning amber), "Create official version vN (will be Verified/Unverified)", version list with status chips + Verification IDs + per-version PDF regenerated FROM THE FROZEN SNAPSHOT (spec §21); working preview PDF relabeled "not official" (§10).
+
+#### Deferred to R1.5
+- AI-narrative half of Ready Check (gateway `ready_check` feature prompt — quality review of entry text). Deterministic missing-parts detection (the user's stated need) ships now.
+
+#### Test path
+- Logbook → Run Ready Check → expect warnings/blockings matching your data → Create official version → v1 appears (Verified if clean, with AIN- ID) → download official PDF → verify immutability: `update report_versions set status='verified'` in SQL editor must fail.

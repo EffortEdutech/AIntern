@@ -1,13 +1,16 @@
 /**
- * AIntern - Logbook Page (/logbook) — Phase 3, Session 10
+ * AIntern - Logbook & Reports Page (/logbook) — v1.1 R1
  *
- * The authoritative record: supervisor-approved entries and evaluations
- * read from immutable server tables (approved_snapshots, evaluations).
- * Unlike History (device drafts), this is identical on every device.
- * Exports the university-ready PDF.
+ * Two layers per spec v1.1:
+ *  - Working preview (§10): live view + quick PDF from current records.
+ *  - Official versions (§11-12, §19): immutable numbered snapshots created
+ *    via server-side RPC; Verified ones carry a permanent Verification ID.
+ *    Official PDFs regenerate from the FROZEN snapshot, never live data.
+ *  - Ready Check (§28): deterministic gap detection before snapshotting.
  *
  * @file src/pages/logbook/LogbookPage.jsx
  * @created July 10, 2026 - Session 10
+ * @updated July 11, 2026 - v1.1 R1: report versions + ready check
  */
 
 import { useEffect, useState } from 'react';
@@ -16,8 +19,12 @@ import { useAuth } from '../../context/AuthContext';
 import { internshipService } from '../../services/api/internshipService';
 import { logbookService } from '../../services/api/logbookService';
 import { dailyLogService } from '../../services/api/dailyLogService';
+import { reportVersionService } from '../../services/api/reportVersionService';
 import { useToast } from '../../context/ToastContext';
-import { DocumentArrowDownIcon, ShieldCheckIcon } from '@heroicons/react/24/outline';
+import {
+  DocumentArrowDownIcon, ShieldCheckIcon, ClipboardDocumentCheckIcon,
+  ExclamationTriangleIcon, XCircleIcon, CheckBadgeIcon,
+} from '@heroicons/react/24/outline';
 
 function summarize(content) {
   const text = content?.['tasks.task_summary'] || '';
@@ -30,7 +37,16 @@ export default function LogbookPage() {
   const [internship, setInternship] = useState(null);
   const [snapshots, setSnapshots] = useState(null);
   const [evaluations, setEvaluations] = useState([]);
+  const [versions, setVersions] = useState([]);
+  const [check, setCheck] = useState(null);
+  const [checking, setChecking] = useState(false);
+  const [creating, setCreating] = useState(false);
   const [exporting, setExporting] = useState(false);
+
+  const loadVersions = async (internshipId) => {
+    const res = await reportVersionService.listVersions(internshipId);
+    if (res.success) setVersions(res.data);
+  };
 
   useEffect(() => {
     let mounted = true;
@@ -47,6 +63,7 @@ export default function LogbookPage() {
         } else {
           setSnapshots([]);
         }
+        await loadVersions(itn.id);
       } else {
         setSnapshots([]);
       }
@@ -54,7 +71,56 @@ export default function LogbookPage() {
     return () => { mounted = false; };
   }, []);
 
-  const exportPdf = async () => {
+  const runReadyCheck = async () => {
+    if (!internship) return;
+    setChecking(true);
+    setCheck(await reportVersionService.readyCheck(internship));
+    setChecking(false);
+  };
+
+  const createVersion = async () => {
+    if (!internship) return;
+    setCreating(true);
+    const res = await reportVersionService.createSnapshot(internship.id);
+    setCreating(false);
+    if (res.success) {
+      const v = res.data;
+      toast.success(
+        v.status === 'verified'
+          ? `Version ${v.version} created and VERIFIED — ID ${v.verification_id}`
+          : `Version ${v.version} created (unverified — see Ready Check).`
+      );
+      await loadVersions(internship.id);
+    } else {
+      toast.error(res.error);
+    }
+  };
+
+  /** Official PDF — regenerated from the FROZEN snapshot content. */
+  const exportVersionPdf = async (versionId) => {
+    setExporting(true);
+    try {
+      const res = await reportVersionService.getVersion(versionId);
+      if (!res.success) throw new Error(res.error);
+      const c = res.data.content;
+      const { generateLogbookPdf } = await import('../../services/pdf/logbookPdf');
+      generateLogbookPdf({
+        profile: c.intern,
+        internship: c.internship,
+        snapshots: c.entries ?? [],
+        evaluations: c.evaluations ?? [],
+        template: c.template ?? null,
+      });
+      toast.success(`Official PDF (v${res.data.version}) downloaded.`);
+    } catch (err) {
+      toast.error('PDF export failed: ' + err.message);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  /** Working preview — live data, not an official record. */
+  const exportWorkingPdf = async () => {
     setExporting(true);
     try {
       const tpl = await dailyLogService.getDailyTemplate(internship);
@@ -66,7 +132,7 @@ export default function LogbookPage() {
         evaluations,
         template: tpl.success ? tpl.data : null,
       });
-      toast.success('Logbook PDF downloaded.');
+      toast.success('Working preview PDF downloaded.');
     } catch (err) {
       toast.error('PDF export failed: ' + err.message);
     } finally {
@@ -80,9 +146,9 @@ export default function LogbookPage() {
         <div className="flex items-start gap-2 text-xs text-gray-500 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
           <ShieldCheckIcon className="w-4 h-4 text-emerald-600 mt-0.5 shrink-0" />
           <span>
-            This is your permanent record — every entry here was approved and
-            signed by your supervisor, and can never be altered. It follows you
-            to any device.
+            Every entry here was approved and signed by your supervisor and can
+            never be altered. Official versions below carry a permanent
+            Verification ID.
           </span>
         </div>
 
@@ -92,7 +158,85 @@ export default function LogbookPage() {
           </div>
         ) : (
           <>
-            {/* Stats + export */}
+            {/* ── Official report versions (v1.1) ── */}
+            <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <ClipboardDocumentCheckIcon className="w-5 h-5 text-slate-700" />
+                <h2 className="font-semibold text-gray-900">Official report versions</h2>
+              </div>
+
+              <button
+                type="button"
+                onClick={runReadyCheck}
+                disabled={checking || !internship}
+                className="w-full border border-slate-300 text-slate-800 rounded-lg py-2.5 font-medium hover:bg-slate-50 transition-colors disabled:opacity-40"
+              >
+                {checking ? 'Checking…' : '🔍 Run Ready Check'}
+              </button>
+
+              {check && (
+                <div className="space-y-1.5">
+                  {check.issues.length === 0 ? (
+                    <p className="text-sm text-emerald-700 flex items-center gap-1.5">
+                      <CheckBadgeIcon className="w-4 h-4" /> Everything looks complete — a Verified version can be created.
+                    </p>
+                  ) : (
+                    check.issues.map((issue, i) => (
+                      <p key={i} className={`text-xs flex items-start gap-1.5 ${issue.level === 'blocking' ? 'text-red-700' : 'text-amber-700'}`}>
+                        {issue.level === 'blocking'
+                          ? <XCircleIcon className="w-4 h-4 mt-0.5 shrink-0" />
+                          : <ExclamationTriangleIcon className="w-4 h-4 mt-0.5 shrink-0" />}
+                        {issue.text}
+                      </p>
+                    ))
+                  )}
+                  <button
+                    type="button"
+                    onClick={createVersion}
+                    disabled={creating || (snapshots.length === 0)}
+                    className="w-full mt-1 bg-slate-900 text-white rounded-lg py-3 font-medium hover:bg-slate-700 transition-colors disabled:opacity-40"
+                  >
+                    {creating
+                      ? 'Creating…'
+                      : `Create official version ${versions.length > 0 ? `v${versions[0].version + 1}` : 'v1'}${check.canVerify ? ' (will be Verified)' : ' (will be Unverified)'}`}
+                  </button>
+                </div>
+              )}
+
+              {versions.length > 0 && (
+                <ul className="space-y-2 pt-1">
+                  {versions.map((v) => (
+                    <li key={v.id} className="flex items-center justify-between rounded-lg border border-gray-200 px-3 py-2.5">
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">
+                          v{v.version}
+                          <span className={`ml-2 text-xs px-2 py-0.5 rounded-full font-medium ${
+                            v.status === 'verified' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'
+                          }`}>
+                            {v.status}
+                          </span>
+                        </p>
+                        <p className="text-[11px] text-gray-400">
+                          {String(v.created_at).slice(0, 10)} · {v.period_start} → {v.period_end}
+                          {v.verification_id && <> · <span className="font-mono">{v.verification_id}</span></>}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => exportVersionPdf(v.id)}
+                        disabled={exporting}
+                        aria-label={`Download PDF of version ${v.version}`}
+                        className="p-2 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40"
+                      >
+                        <DocumentArrowDownIcon className="w-5 h-5" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            {/* ── Working preview ── */}
             <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
               <div className="grid grid-cols-2 gap-3 text-center">
                 <div>
@@ -106,21 +250,16 @@ export default function LogbookPage() {
               </div>
               <button
                 type="button"
-                onClick={exportPdf}
+                onClick={exportWorkingPdf}
                 disabled={exporting || snapshots.length === 0}
-                className="w-full inline-flex items-center justify-center gap-2 bg-slate-900 text-white rounded-lg py-3 font-medium hover:bg-slate-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                className="w-full inline-flex items-center justify-center gap-2 border border-slate-300 text-slate-800 rounded-lg py-2.5 font-medium hover:bg-slate-50 transition-colors disabled:opacity-40"
               >
                 <DocumentArrowDownIcon className="w-5 h-5" />
-                {exporting ? 'Building PDF…' : 'Export logbook PDF'}
+                {exporting ? 'Building…' : 'Working preview PDF (not official)'}
               </button>
-              {snapshots.length === 0 && (
-                <p className="text-xs text-gray-400 text-center">
-                  Approved entries appear here after your supervisor reviews your submissions.
-                </p>
-              )}
             </div>
 
-            {/* Evaluations */}
+            {/* ── Evaluations ── */}
             {evaluations.length > 0 && (
               <section className="space-y-2">
                 <h2 className="font-semibold text-gray-900">Evaluations</h2>
@@ -150,7 +289,7 @@ export default function LogbookPage() {
               </section>
             )}
 
-            {/* Approved entries */}
+            {/* ── Approved entries ── */}
             {snapshots.length > 0 && (
               <section className="space-y-2">
                 <h2 className="font-semibold text-gray-900">Approved entries</h2>
