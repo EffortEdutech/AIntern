@@ -168,6 +168,28 @@ class DailyLogService {
   }
 
   /**
+   * Device restore (Session 10): write a full record directly — used when
+   * rebuilding local History on a new device from server-known entries.
+   * Preserves the server's client_created_at (late-flag authority).
+   */
+  async restoreRecord(record) {
+    const existing = await internDb.dailyDrafts.get(record.entry_date);
+    if (existing) {
+      return existing; // never overwrite local work during restore
+    }
+    const next = {
+      entry_date: record.entry_date,
+      data: record.data ?? {},
+      status: record.status ?? 'submitted',
+      late: false,
+      client_created_at: record.client_created_at ?? new Date().toISOString(),
+      updated_at: record.updated_at ?? new Date().toISOString(),
+    };
+    await internDb.dailyDrafts.put(next);
+    return next;
+  }
+
+  /**
    * Delete a local draft (only sensible while status is draft/ready).
    */
   async deleteDraft(entryDate) {

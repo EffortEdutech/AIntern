@@ -11,6 +11,7 @@
 
 import { supabase } from '../supabase/client';
 import { dailyLogService } from './dailyLogService';
+import { logbookService } from './logbookService';
 
 function normalizeSubmissionStatus(status) {
   return status === 'approved' || status === 'rejected' ? status : 'submitted';
@@ -24,7 +25,7 @@ class SubmissionService {
 
     const { data, error } = await supabase
       .from('entry_submissions')
-      .select('id, entry_date, status, supervisor_comment, submitted_at, resolved_at')
+      .select('id, entry_date, status, supervisor_comment, submitted_at, resolved_at, client_created_at, data')
       .eq('internship_id', internshipId)
       .order('entry_date', { ascending: false });
 
@@ -130,8 +131,31 @@ class SubmissionService {
       return submissions;
     }
 
+    // Device restore (Session 10): create local records for server-known
+    // entries missing on this device (new phone / fresh browser). Pending
+    // content comes from the submission; approved content from the
+    // immutable snapshot; rejected rows restore as revision stubs.
+    let snapshotsByDate = null;
     const synced = [];
     for (const submission of submissions.data) {
+      const existingLocal = await dailyLogService.getDraft(submission.entry_date);
+      if (!existingLocal) {
+        let content = submission.data ?? {};
+        if (submission.status === 'approved') {
+          if (snapshotsByDate === null) {
+            const snaps = await logbookService.getApprovedSnapshots(internshipId);
+            snapshotsByDate = new Map((snaps.data ?? []).map((s) => [s.entry_date, s.content]));
+          }
+          content = snapshotsByDate.get(submission.entry_date) ?? {};
+        }
+        await dailyLogService.restoreRecord({
+          entry_date: submission.entry_date,
+          data: content,
+          status: 'submitted',
+          client_created_at: submission.client_created_at ?? submission.submitted_at,
+          updated_at: submission.submitted_at,
+        });
+      }
       const local = await dailyLogService.markSubmitted(submission.entry_date, submission);
       if (local) {
         synced.push({

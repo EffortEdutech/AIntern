@@ -2,7 +2,7 @@
 
 <!-- Session 6 review addendum appended July 10, 2026 — see below -->
 
-**Last Updated:** July 10, 2026 — End of Sessions 7–9 (combined)
+**Last Updated:** July 10, 2026 — End of Session 10
 
 ## 📊 OVERALL STATUS
 
@@ -11,7 +11,7 @@
 | Phase 0 | Foundation (seed, schema, AI gateway) | ✅ Complete — S1–S3 |
 | Phase 1 | Intern Logging Core | ✅ Complete — S4–S6 |
 | Phase 2 | Supervisor Loop (email links, snapshots, evaluations) | ✅ Core complete — S7–S9 (cron digests + rate limiting deferred to polish) |
-| Phase 3 | Export & Premium (PDF logbook, AI form import) | 📅 |
+| Phase 3 | Export & Premium (PDF logbook, AI form import) | 🔄 S10 done (logbook + PDF + device restore); S11 AI form import pending |
 | Phase 4 | Monetization & Pilot | 📅 |
 
 ---
@@ -208,3 +208,29 @@ Verification: host-side file integrity confirmed, esbuild syntax pass on both se
 3. Documented device-locality of drafts (IndexedDB per origin: localhost vs Vercel are separate devices by design); device-restore sync scheduled for S10.
 
 Files: InternProfile.jsx (295 lines), LogHistory.jsx (319 lines) — patched via git-recover procedure, esbuild verified.
+
+---
+
+### Session 10: Logbook + PDF Export + Device Restore ✅ — Phase 3 begins
+**Date:** July 10, 2026
+
+#### New
+- `src/services/api/logbookService.js` — owner-scoped reads of the authoritative record (approved_snapshots + evaluations).
+- `src/pages/logbook/LogbookPage.jsx` — `/logbook`: stats, evaluations with average score, approved entries with supervisor comments, "Export logbook PDF". Server-side data — identical on every device.
+- `src/services/pdf/logbookPdf.js` — client-side jsPDF/autotable logbook: dark cover with internship details, per-day entry blocks (template labels, supervisor comments, signature images), evaluation rubric tables with period summaries, page numbers. Lazy-loaded so it only ships when exporting.
+- InternHome → Logbook card; router → `/logbook`.
+
+#### Device restore (fixes the "data not sync" report)
+- `dailyLogService.restoreRecord` + extended `submissionService.syncLocalStatuses`: server-known entries missing on a device are recreated locally (pending content from submissions, approved content from snapshots, rejected as revision stubs). Never overwrites local work. New device → login → History repopulates.
+
+#### Incident (third mount corruption — now with detection)
+- Working tree had silently truncated dailyLogService.js (111/179 lines) and DailyLogPage.jsx (194/206) — caught by `git status` + line-count audit BEFORE patching this time. Restored via `git checkout`, patched in /tmp, wrote back whole. Audit step (`git status --short` + HEAD-vs-WT line counts) is now part of the session-start checklist.
+
+#### E2E test now possible (S10 unblocked it)
+1. Vercel app → submit logs → email supervisor (own address) → open /review link → approve with signature (+ rubric if due).
+2. History sync → approved status appears.
+3. Home → Logbook → entries + evaluation visible → Export logbook PDF.
+4. Different browser/device → login → History restores from server.
+
+#### Next (S11)
+- AI Template Studio: upload university logbook PDF **or image** → template/layout draft → review → publish (premium); custom formats feed the PDF exporter.

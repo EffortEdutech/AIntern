@@ -167,6 +167,22 @@ export default function InternHome() {
                 {todayLogged ? `Continue today's ${t('entry').toLowerCase()}` : `Start today's ${t('entry').toLowerCase()}`}
               </Link>
             </div>
+
+            {/* ── Logbook (Session 10) ── */}
+            <Link
+              to="/logbook"
+              className="block bg-white rounded-xl border border-gray-200 p-5 hover:border-gray-300 transition-colors"
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-semibold text-gray-900">{t('logbook')}</h3>
+                  <p className="text-sm text-gray-500 mt-0.5">
+                    Your approved, signed record — export as PDF anytime.
+                  </p>
+                </div>
+                <span className="text-gray-300 text-xl">›</span>
+              </div>
+            </Link>
           </>
         )}
       </div>
