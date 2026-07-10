@@ -132,6 +132,10 @@ export default function LogHistory() {
 
     if (result.success) {
       toast.success(`${result.submitted.length} log${result.submitted.length === 1 ? '' : 's'} submitted for supervisor review.`);
+      // Honor digest mode: "Every submission" emails the supervisor now.
+      if (internship.digest_mode === 'per-entry') {
+        await emailSupervisor();
+      }
     } else {
       toast.warning(`${result.submitted.length} submitted, ${result.failed.length} failed. Open the failed logs and try again.`);
     }

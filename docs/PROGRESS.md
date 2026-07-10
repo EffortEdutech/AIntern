@@ -197,4 +197,14 @@ Verification: host-side file integrity confirmed, esbuild syntax pass on both se
 - Rate limiting on token validation attempts.
 
 #### Next (Phase 3 — S10)
-- Approvals/logbook view from snapshots + PDF export via render engine.
+- Approvals/
+---
+
+### Post-S9 UX fixes (user testing feedback) ✅
+**Date:** July 10, 2026
+
+1. **Supervisor email now editable** — Profile → Review settings gains Supervisor name/email fields with an "Update supervisor" button (was onboarding-only; typo or supervisor change had no recovery path).
+2. **Digest mode "Every submission" now honored** — Submit selected auto-sends the supervisor review email when `digest_mode === 'per-entry'`. Other modes keep the manual ✉️ button (daily digest automation still deferred).
+3. Documented device-locality of drafts (IndexedDB per origin: localhost vs Vercel are separate devices by design); device-restore sync scheduled for S10.
+
+Files: InternProfile.jsx (295 lines), LogHistory.jsx (319 lines) — patched via git-recover procedure, esbuild verified.

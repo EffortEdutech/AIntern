@@ -36,6 +36,8 @@ export default function InternProfile() {
   });
   const [internship, setInternship] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [supFields, setSupFields] = useState({ supervisor_name: '', supervisor_email: '' });
+  const [supSaving, setSupSaving] = useState(false);
 
   // AI BYOK state
   const [aiProvider, setAiProvider] = useState('openai');
@@ -55,7 +57,15 @@ export default function InternProfile() {
   }, [profile]);
 
   useEffect(() => {
-    internshipService.getMyInternship().then(({ data }) => setInternship(data));
+    internshipService.getMyInternship().then(({ data }) => {
+      setInternship(data);
+      if (data) {
+        setSupFields({
+          supervisor_name: data.supervisor_name || '',
+          supervisor_email: data.supervisor_email || '',
+        });
+      }
+    });
     aiService.listKeys().then((res) => {
       if (res.success) setSavedKeys(res.keys ?? []);
     });
@@ -76,6 +86,23 @@ export default function InternProfile() {
     if (res.success) {
       setInternship(res.data);
       toast.success('Setting updated');
+    } else {
+      toast.error(res.error);
+    }
+  };
+
+  const saveSupervisor = async () => {
+    if (!internship) return;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(supFields.supervisor_email)) {
+      toast.error('Please enter a valid supervisor email.');
+      return;
+    }
+    setSupSaving(true);
+    const res = await internshipService.updateInternship(internship.id, supFields);
+    setSupSaving(false);
+    if (res.success) {
+      setInternship(res.data);
+      toast.success('Supervisor updated — future review links go to the new address.');
     } else {
       toast.error(res.error);
     }
@@ -160,6 +187,35 @@ export default function InternProfile() {
                 ))}
               </div>
             </div>
+            <div>
+              <label className={labelCls}>Supervisor name</label>
+              <input
+                className={inputCls}
+                value={supFields.supervisor_name}
+                onChange={(e) => setSupFields((f) => ({ ...f, supervisor_name: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className={labelCls}>Supervisor email</label>
+              <input
+                type="email"
+                className={inputCls}
+                value={supFields.supervisor_email}
+                onChange={(e) => setSupFields((f) => ({ ...f, supervisor_email: e.target.value }))}
+                placeholder="Review links are sent here"
+              />
+            </div>
+            {(supFields.supervisor_name !== (internship?.supervisor_name || '') ||
+              supFields.supervisor_email !== (internship?.supervisor_email || '')) && (
+              <button
+                type="button"
+                onClick={saveSupervisor}
+                disabled={supSaving}
+                className="w-full bg-slate-900 text-white rounded-lg py-2.5 font-medium disabled:bg-gray-300 hover:bg-slate-700 transition-colors"
+              >
+                {supSaving ? 'Saving…' : 'Update supervisor'}
+              </button>
+            )}
             <div>
               <label className={labelCls}>Supervisor email digest</label>
               <select
