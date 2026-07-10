@@ -13,7 +13,6 @@
 | Phase 2 | Supervisor Loop (email links, snapshots, evaluations) | ✅ Core complete — S7–S9 |
 | Phase 3 | Export & Premium (PDF logbook, AI form import) | ✅ Complete — S10–S11 |
 | Phase 4 | Monetization & Pilot | 📅 Next — after user e2e test + polish |
-| Phase 4 | Monetization & Pilot | 📅 |
 
 ---
 
@@ -261,3 +260,12 @@ Files: InternProfile.jsx (295 lines), LogHistory.jsx (319 lines) — patched via
 #### Remaining before pilot (Phase 4)
 - Polish list: cron digest emails, token rate limiting, draft backup opt-in, PWA install nudge on Vercel origin, monthly-cap tuning from ai_usage telemetry.
 - Monetization: internship pass purchase + entitlement gating (S13 per plan).
+                  
+---
+
+### Post-S11 fix: Review-link share fallback (user testing feedback) ✅
+**Date:** July 10, 2026
+
+- **Q from testing:** "Submit selected" vs "Email my supervisor" — Submit uploads selected ready logs to the server review queue; Email creates the secure one-time link covering everything pending and delivers it. Two steps so daily submissions don't spam the supervisor; digest mode "Every submission" merges them.
+- **Fix:** RESEND_API_KEY missing no longer blocks the flow. `supervisor-review` v2 (deployed): when email is unconfigured (or `share_mode:'link'`), `request_review` still creates the secure token and returns `review_link`; LogHistory offers it via the phone's native share sheet (WhatsApp) or copies to clipboard. Implements plan §9.3 (WhatsApp fallback for MY deliverability). Same token security — email was delivery, never auth.
+- Gmail SMTP rejected as test path: Edge runtime has no raw TCP; Gmail REST API needs a GCloud OAuth setup far heavier than Resend's 2-minute signup. Resend remains the production path.

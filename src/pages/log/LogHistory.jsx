@@ -152,7 +152,30 @@ export default function LogHistory() {
     if (res.success) {
       const bits = [`${res.submissions} log${res.submissions === 1 ? '' : 's'}`];
       if (res.evaluation_included) bits.push('evaluation form');
-      toast.success(`Review link (${bits.join(' + ')}) emailed to ${res.emailed_to}.`);
+      if (res.email_sent === false && res.review_link) {
+        // Email not configured — share the secure link directly (WhatsApp etc.)
+        let shared = false;
+        if (navigator.share) {
+          try {
+            await navigator.share({
+              title: 'AIntern — review request',
+              text: `Please review my internship logs (${bits.join(' + ')}):`,
+              url: res.review_link,
+            });
+            shared = true;
+          } catch { /* user dismissed the share sheet */ }
+        }
+        if (!shared) {
+          try {
+            await navigator.clipboard.writeText(res.review_link);
+            toast.success('Review link copied — paste it to your supervisor on WhatsApp or email.');
+          } catch {
+            toast.info(`Share this link with your supervisor: ${res.review_link}`);
+          }
+        }
+      } else {
+        toast.success(`Review link (${bits.join(' + ')}) emailed to ${res.emailed_to}.`);
+      }
     } else {
       toast.error(res.error);
     }

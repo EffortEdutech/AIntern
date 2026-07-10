@@ -177,10 +177,6 @@ Deno.serve(async (req) => {
         .maybeSingle();
       if (!internship) return json({ success: false, error: 'Internship not found' }, 404);
 
-      if (!RESEND_API_KEY) {
-        return json({ success: false, error: 'Email is not configured yet (RESEND_API_KEY missing).' }, 500);
-      }
-
       // Pending submissions to cover
       const { data: pending } = await admin
         .from('entry_submissions')
@@ -241,12 +237,25 @@ Deno.serve(async (req) => {
       });
       if (tokenErr) return json({ success: false, error: tokenErr.message }, 500);
 
-      // Send the email
       const link = `${APP_URL}/review?token=${raw}`;
       const count = (pending ?? []).length;
       const parts = [];
       if (count > 0) parts.push(`${count} daily log${count === 1 ? '' : 's'} awaiting your review`);
       if (evaluationDue) parts.push(`the ${internship.evaluation_cadence_days}-day evaluation form`);
+
+      // Link fallback (plan §9.3): no email configured, or the intern chose
+      // to share via WhatsApp — return the secure link instead of failing.
+      if (!RESEND_API_KEY || body.share_mode === 'link') {
+        return json({
+          success: true,
+          email_sent: false,
+          review_link: link,
+          emailed_to: null,
+          submissions: count,
+          evaluation_included: evaluationDue,
+        });
+      }
+
       const html = `
         <div style="font-family:sans-serif;max-width:520px;margin:0 auto">
           <h2 style="color:#0f172a">AIntern — review request</h2>
@@ -274,6 +283,7 @@ Deno.serve(async (req) => {
 
       return json({
         success: true,
+        email_sent: true,
         emailed_to: internship.supervisor_email,
         submissions: count,
         evaluation_included: evaluationDue,
