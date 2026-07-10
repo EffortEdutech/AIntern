@@ -15,6 +15,7 @@ import InternShell from '../../components/layout/InternShell';
 import { dailyLogService } from '../../services/api/dailyLogService';
 import { internshipService } from '../../services/api/internshipService';
 import { submissionService } from '../../services/api/submissionService';
+import { reviewService } from '../../services/api/reviewService';
 import { useToast } from '../../context/ToastContext';
 import { useOffline } from '../../hooks/useOffline';
 import { PencilSquareIcon, ArrowUpTrayIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
@@ -38,6 +39,7 @@ export default function LogHistory() {
   const [selected, setSelected] = useState(new Set());
   const [submitting, setSubmitting] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [emailing, setEmailing] = useState(false);
   const toast = useToast();
   const { isOnline } = useOffline();
 
@@ -135,6 +137,23 @@ export default function LogHistory() {
     }
   };
 
+  const emailSupervisor = async () => {
+    if (!internship || !isOnline) {
+      toast.warning('Emailing your supervisor needs a connection.');
+      return;
+    }
+    setEmailing(true);
+    const res = await reviewService.requestReview(internship.id);
+    setEmailing(false);
+    if (res.success) {
+      const bits = [`${res.submissions} log${res.submissions === 1 ? '' : 's'}`];
+      if (res.evaluation_included) bits.push('evaluation form');
+      toast.success(`Review link (${bits.join(' + ')}) emailed to ${res.emailed_to}.`);
+    } else {
+      toast.error(res.error);
+    }
+  };
+
   const withdrawDraft = async (draft) => {
     if (!internship) {
       return;
@@ -196,6 +215,17 @@ export default function LogHistory() {
               <ArrowUpTrayIcon className="w-5 h-5" />
               {submitting ? 'Submitting...' : `Submit ${selectedCount || ''} selected`.trim()}
             </button>
+
+            {(drafts ?? []).some((d) => d.status === 'submitted') && (
+              <button
+                type="button"
+                onClick={emailSupervisor}
+                disabled={emailing || !isOnline || !internship}
+                className="w-full rounded-lg border border-slate-300 text-slate-800 py-2.5 font-medium hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {emailing ? 'Sending…' : '✉️ Email my supervisor a review link'}
+              </button>
+            )}
 
             {!isOnline && (
               <p className="text-xs text-amber-700">

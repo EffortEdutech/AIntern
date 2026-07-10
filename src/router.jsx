@@ -36,6 +36,10 @@ const Onboarding    = lazy(() => import('./pages/onboarding/Onboarding'));
 const DailyLogPage  = lazy(() => import('./pages/log/DailyLogPage'));
 const LogHistory    = lazy(() => import('./pages/log/LogHistory'));
 
+// Public supervisor page — token-gated inside the page/Edge Function,
+// deliberately NOT wrapped in <Auth> (supervisors have no accounts).
+const SupervisorReview = lazy(() => import('./pages/review/SupervisorReview'));
+
 // 404
 const NotFoundPage = () => (
   <div className="flex items-center justify-center min-h-screen bg-gray-50">
@@ -55,6 +59,7 @@ export const router = createBrowserRouter([
   { path: ROUTES.LOGIN,           element: <Login /> },
   { path: ROUTES.REGISTER,        element: <Register /> },
   { path: ROUTES.FORGOT_PASSWORD, element: <ForgotPassword /> },
+  { path: '/review',              element: <SupervisorReview /> },
 
   // ── Intern (authenticated) ──────────────────────────────────────────
   { path: '/',           element: <Auth><InternHome /></Auth> },

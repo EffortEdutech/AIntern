@@ -2,7 +2,7 @@
 
 <!-- Session 6 review addendum appended July 10, 2026 — see below -->
 
-**Last Updated:** July 9, 2026 — End of Session 6
+**Last Updated:** July 10, 2026 — End of Sessions 7–9 (combined)
 
 ## 📊 OVERALL STATUS
 
@@ -10,7 +10,7 @@
 |-------|-------------|--------|
 | Phase 0 | Foundation (seed, schema, AI gateway) | ✅ Complete — S1–S3 |
 | Phase 1 | Intern Logging Core | ✅ Complete — S4–S6 |
-| Phase 2 | Supervisor Loop (email links, snapshots, evaluations) | 🔄 Next — S7 token/email service |
+| Phase 2 | Supervisor Loop (email links, snapshots, evaluations) | ✅ Core complete — S7–S9 (cron digests + rate limiting deferred to polish) |
 | Phase 3 | Export & Premium (PDF logbook, AI form import) | 📅 |
 | Phase 4 | Monetization & Pilot | 📅 |
 
@@ -162,3 +162,39 @@ Verification: host-side file integrity confirmed, esbuild syntax pass on both se
 **Resubmission test path:** reject a submission (SQL editor: `update entry_submissions set status='rejected', supervisor_comment='test', resolved_at=now() where entry_date='...'`) → sync in History → open log, edit, Save as ready → submit again → server row should be fresh `pending`.
 
 **Next (S7 — Phase 2 begins):** approval token service + email delivery (Resend), supervisor review page.
+
+---
+
+### Sessions 7–9 (combined): Supervisor Loop ✅ — PHASE 2 CORE COMPLETE
+**Date:** July 10, 2026
+
+#### New — Edge Function `supervisor-review` (deployed v1, ACTIVE, verify_jwt=false BY DESIGN)
+- Supervisors have no accounts: token actions implement their own auth; `request_review` validates the intern JWT manually.
+- `request_review` (intern JWT): revokes prior open tokens → issues 32-byte token (only SHA-256 stored) covering all pending submissions + evaluation form when cadence period due (computed from last evaluation period_end / start_date + cadence_days) → emails supervisor via Resend.
+- `get_review` (token): submissions content + template labels + internship context + evaluation payload + custom KPIs.
+- `decide` (token): approve → immutable `approved_snapshots` (content, entry SHA-256 hash, ip/user-agent audit, supervisor signature) + submission resolved; reject → comment stored, content purged (`data={}`), plan §4.2.
+- `submit_evaluation` (token): immutable `evaluations` row with server-computed period summary (days logged, approved count, total hours).
+- Token lifecycle: 7-day expiry, single active per internship, `used_at` when payload fully resolved; decisions restricted to payload-listed rows only.
+
+#### New — Client
+- `src/pages/review/SupervisorReview.jsx` — PUBLIC `/review?token=` page: entry cards rendered from template labels, ✓ Approve / ✗ Needs revision per entry (comment required on reject), 7-metric rubric (1–5) + custom KPIs + strengths/improvements when evaluation due, standalone SignaturePad (touch+mouse, dataURL), guarded submit, done/expired states.
+- `src/services/api/reviewService.js` — intern-side `request_review` invoke.
+- `router.jsx` — `/review` public route (deliberately outside <Auth>).
+- `LogHistory.jsx` — "✉️ Email my supervisor a review link" button (shown when submitted logs exist).
+
+#### ⚠ Required secrets before emails send
+- `RESEND_API_KEY` — free account at resend.com (dev mode delivers only to your own address until a domain is verified).
+- `AINTERN_APP_URL` — where /review links point (e.g. `http://localhost:4900` for testing; production Vercel URL later).
+- Optional: `AINTERN_EMAIL_FROM` (default `AIntern <onboarding@resend.dev>`).
+
+#### Verification
+- esbuild pass on all 5 files; function deployed via MCP.
+- ⚠ Second mount-corruption incident: LogHistory.jsx truncated during patching; recovered FULL file from `git show HEAD:` then patched on local disk and wrote back whole — this is now the mandatory procedure for editing files >100 lines from the sandbox.
+- **E2E test path:** set secrets → set your own email as supervisor_email in Profile → submit 1–2 logs → History → "Email my supervisor" → open link from email → approve one/reject one with comment (+ rubric if cadence due) → sign → submit → intern History sync shows approved/rejected + comment → verify `approved_snapshots` row exists and is immutable (UPDATE should fail in SQL editor).
+
+#### Deferred (Phase 2 polish, later)
+- Cron-driven digest emails (per-entry/daily modes) — v1 is intern-triggered, matching the approved flow.
+- Rate limiting on token validation attempts.
+
+#### Next (Phase 3 — S10)
+- Approvals/logbook view from snapshots + PDF export via render engine.
