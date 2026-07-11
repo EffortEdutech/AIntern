@@ -16,6 +16,7 @@ import { useToast } from '../../context/ToastContext';
 import { internshipService } from '../../services/api/internshipService';
 import { aiService } from '../../services/api/aiService';
 import { PLATFORM } from '../../config/platform';
+import { ACCENT_CHOICES, LAYOUT_DEFAULTS } from '../../services/render/reportLayout';
 import InternShell from '../../components/layout/InternShell';
 
 const AI_PROVIDERS = [
@@ -39,6 +40,10 @@ export default function InternProfile() {
   const [saving, setSaving] = useState(false);
   const [supFields, setSupFields] = useState({ supervisor_name: '', supervisor_email: '' });
   const [supSaving, setSupSaving] = useState(false);
+
+  // Report style prefs (v1.1 R2, spec section 18)
+  const [prefs, setPrefs] = useState({});
+  const [prefsSaving, setPrefsSaving] = useState(false);
 
   // AI BYOK state
   const [aiProvider, setAiProvider] = useState('openai');
@@ -65,6 +70,7 @@ export default function InternProfile() {
           supervisor_name: data.supervisor_name || '',
           supervisor_email: data.supervisor_email || '',
         });
+        setPrefs(data.metadata?.report_prefs ?? {});
       }
     });
     aiService.listKeys().then((res) => {
@@ -104,6 +110,22 @@ export default function InternProfile() {
     if (res.success) {
       setInternship(res.data);
       toast.success('Supervisor updated — future review links go to the new address.');
+    } else {
+      toast.error(res.error);
+    }
+  };
+
+  const savePrefs = async (next) => {
+    if (!internship) return;
+    setPrefs(next);
+    setPrefsSaving(true);
+    const res = await internshipService.updateInternship(internship.id, {
+      metadata: { ...(internship.metadata ?? {}), report_prefs: next },
+    });
+    setPrefsSaving(false);
+    if (res.success) {
+      setInternship(res.data);
+      toast.success('Report style saved');
     } else {
       toast.error(res.error);
     }
@@ -229,6 +251,62 @@ export default function InternProfile() {
                 ))}
               </select>
             </div>
+          </section>
+        )}
+
+        {/* Report style (v1.1 R2, spec section 18) */}
+        {internship && (
+          <section className="bg-white rounded-xl border border-gray-200 p-5 space-y-3">
+            <h2 className="font-semibold text-gray-900">Report style</h2>
+            <p className="text-xs text-gray-500">
+              Personalise your generated reports — the official record itself never changes.
+            </p>
+            <div>
+              <label className={labelCls}>Report title</label>
+              <input
+                className={inputCls}
+                value={prefs.title ?? ''}
+                placeholder={LAYOUT_DEFAULTS.title}
+                onBlur={() => savePrefs({ ...prefs, title: (prefs.title ?? '').trim() || undefined })}
+                onChange={(e) => setPrefs((p) => ({ ...p, title: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className={labelCls}>Accent colour</label>
+              <div className="flex gap-2">
+                {ACCENT_CHOICES.map((c) => {
+                  const active = JSON.stringify(prefs.accent ?? LAYOUT_DEFAULTS.accent) === JSON.stringify(c.rgb);
+                  return (
+                    <button
+                      key={c.name}
+                      type="button"
+                      aria-label={c.name}
+                      onClick={() => savePrefs({ ...prefs, accent: c.rgb })}
+                      className={`w-9 h-9 rounded-full border-2 ${active ? 'border-slate-900 ring-2 ring-slate-300' : 'border-transparent'}`}
+                      style={{ backgroundColor: `rgb(${c.rgb[0]}, ${c.rgb[1]}, ${c.rgb[2]})` }}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              {[
+                ['show_signatures', 'Include supervisor signatures'],
+                ['show_comments', 'Include supervisor comments'],
+                ['show_evaluations', 'Include evaluations section'],
+              ].map(([key, label]) => (
+                <label key={key} className="flex items-center gap-2 text-sm text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={prefs[key] ?? LAYOUT_DEFAULTS[key]}
+                    onChange={(e) => savePrefs({ ...prefs, [key]: e.target.checked })}
+                    className="h-4 w-4 rounded border-gray-300"
+                  />
+                  {label}
+                </label>
+              ))}
+            </div>
+            {prefsSaving && <p className="text-xs text-gray-400">Saving…</p>}
           </section>
         )}
 

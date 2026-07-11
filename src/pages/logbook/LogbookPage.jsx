@@ -20,10 +20,12 @@ import { internshipService } from '../../services/api/internshipService';
 import { logbookService } from '../../services/api/logbookService';
 import { dailyLogService } from '../../services/api/dailyLogService';
 import { reportVersionService } from '../../services/api/reportVersionService';
+import { resolveLayout } from '../../services/render/reportLayout';
+import ReportPreview from '../../components/report/ReportPreview';
 import { useToast } from '../../context/ToastContext';
 import {
   DocumentArrowDownIcon, ShieldCheckIcon, ClipboardDocumentCheckIcon,
-  ExclamationTriangleIcon, XCircleIcon, CheckBadgeIcon,
+  ExclamationTriangleIcon, XCircleIcon, CheckBadgeIcon, EyeIcon,
 } from '@heroicons/react/24/outline';
 
 function summarize(content) {
@@ -42,6 +44,7 @@ export default function LogbookPage() {
   const [checking, setChecking] = useState(false);
   const [creating, setCreating] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [preview, setPreview] = useState(null); // { model, layout, label }
 
   const loadVersions = async (internshipId) => {
     const res = await reportVersionService.listVersions(internshipId);
@@ -110,6 +113,7 @@ export default function LogbookPage() {
         snapshots: c.entries ?? [],
         evaluations: c.evaluations ?? [],
         template: c.template ?? null,
+        layout: resolveLayout(c.template, internship),
       });
       toast.success(`Official PDF (v${res.data.version}) downloaded.`);
     } catch (err) {
@@ -117,6 +121,37 @@ export default function LogbookPage() {
     } finally {
       setExporting(false);
     }
+  };
+
+  /** HTML preview of a FROZEN official version (spec §29). */
+  const previewVersion = async (versionId) => {
+    const res = await reportVersionService.getVersion(versionId);
+    if (!res.success) {
+      toast.error(res.error);
+      return;
+    }
+    const c = res.data.content;
+    setPreview({
+      model: { intern: c.intern, internship: c.internship, entries: c.entries ?? [], evaluations: c.evaluations ?? [], template: c.template ?? null },
+      layout: resolveLayout(c.template, internship),
+      label: `Official v${res.data.version}`,
+    });
+  };
+
+  /** HTML preview of the WORKING report (live records, spec §10+§29). */
+  const previewWorking = async () => {
+    const tpl = await dailyLogService.getDailyTemplate(internship);
+    setPreview({
+      model: {
+        intern: { full_name: profile?.full_name, university: profile?.university, course: profile?.course },
+        internship,
+        entries: snapshots ?? [],
+        evaluations,
+        template: tpl.success ? tpl.data : null,
+      },
+      layout: resolveLayout(tpl.success ? tpl.data : null, internship),
+      label: 'Working report',
+    });
   };
 
   /** Working preview — live data, not an official record. */
@@ -131,6 +166,7 @@ export default function LogbookPage() {
         snapshots: snapshots ?? [],
         evaluations,
         template: tpl.success ? tpl.data : null,
+        layout: resolveLayout(tpl.success ? tpl.data : null, internship),
       });
       toast.success('Working preview PDF downloaded.');
     } catch (err) {
@@ -221,15 +257,25 @@ export default function LogbookPage() {
                           {v.verification_id && <> · <span className="font-mono">{v.verification_id}</span></>}
                         </p>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => exportVersionPdf(v.id)}
-                        disabled={exporting}
-                        aria-label={`Download PDF of version ${v.version}`}
-                        className="p-2 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40"
-                      >
-                        <DocumentArrowDownIcon className="w-5 h-5" />
-                      </button>
+                      <div className="flex gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => previewVersion(v.id)}
+                          aria-label={`Preview version ${v.version}`}
+                          className="p-2 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50"
+                        >
+                          <EyeIcon className="w-5 h-5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => exportVersionPdf(v.id)}
+                          disabled={exporting}
+                          aria-label={`Download PDF of version ${v.version}`}
+                          className="p-2 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40"
+                        >
+                          <DocumentArrowDownIcon className="w-5 h-5" />
+                        </button>
+                      </div>
                     </li>
                   ))}
                 </ul>
@@ -248,6 +294,15 @@ export default function LogbookPage() {
                   <p className="text-xs text-gray-500">Evaluations</p>
                 </div>
               </div>
+              <button
+                type="button"
+                onClick={previewWorking}
+                disabled={snapshots.length === 0}
+                className="w-full inline-flex items-center justify-center gap-2 border border-slate-300 text-slate-800 rounded-lg py-2.5 font-medium hover:bg-slate-50 transition-colors disabled:opacity-40"
+              >
+                <EyeIcon className="w-5 h-5" />
+                Live preview (HTML)
+              </button>
               <button
                 type="button"
                 onClick={exportWorkingPdf}
@@ -314,6 +369,15 @@ export default function LogbookPage() {
           </>
         )}
       </div>
+
+      {preview && (
+        <ReportPreview
+          model={preview.model}
+          layout={preview.layout}
+          label={preview.label}
+          onClose={() => setPreview(null)}
+        />
+      )}
     </InternShell>
   );
 }

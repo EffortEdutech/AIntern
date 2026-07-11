@@ -2,7 +2,7 @@
 
 <!-- Session 6 review addendum appended July 10, 2026 — see below -->
 
-**Last Updated:** July 11, 2026 — v1.1 R1 complete
+**Last Updated:** July 11, 2026 — v1.1 R2 complete
 
 ## 📊 OVERALL STATUS
 
@@ -14,7 +14,8 @@
 | Phase 3 | Export & Premium (PDF logbook, AI form import) | ✅ Complete — S10–S11 |
 | v1.0 e2e pilot | User end-to-end test | ✅ Completed July 11 |
 | **v1.1 R1** | Report versions + Verification IDs + Ready Check | ✅ Complete |
-| v1.1 R2–R5 | Presentation templates/HTML preview → DOCX+QR verify → multi-reviewer → portfolio | 📅 |
+| **v1.1 R2** | Presentation templates + HTML live preview + report style prefs | ✅ Complete |
+| v1.1 R3–R5 | DOCX + QR /verify → multi-reviewer → portfolio | 📅 |
 | Phase 4 | Monetization & Pilot | 📅 |
 
 ---
@@ -304,4 +305,30 @@ Assessment: the v1.1 spec formalizes v1.0's trust model (single source of truth,
 - AI-narrative half of Ready Check (gateway `ready_check` feature prompt — quality review of entry text). Deterministic missing-parts detection (the user's stated need) ships now.
 
 #### Test path
-- Logbook → Run Ready Check → expect warnings/blockings matching your data → Create official version → v1 appears (Verified if clean, with AIN- ID) → download official PDF → verify immutability: `update report_versions set status='verified'` in SQL editor must fail.
+- Logbook → Run Ready Check → expect warnings/blocki
+---
+
+### R2: Presentation Templates + HTML Live Preview ✅
+**Date:** July 11, 2026
+
+Spec §14-18 (Template Engine), §29 (Live Preview). Design decision: rather than reviving the parked WorkLedger RenderEngineCore (coupled to work-entry blocks; remains parked), implemented the spec's model directly as a lean layout chain — ZERO schema changes:
+
+**Layout resolution:** `LAYOUT_DEFAULTS ← template.pdf_layout.report (institution rules; frozen into report snapshots with the template) ← internship.metadata.report_prefs (student preferences, §18)`. One resolved layout feeds BOTH renderers — HTML preview and PDF can never disagree.
+
+#### New
+- `src/services/render/reportLayout.js` — resolver + ACCENT_CHOICES; layout keys: title, accent (rgb/hex), show_cover/signatures/comments/evaluations, footer_text, density (normal/compact).
+- `src/components/report/ReportPreview.jsx` — full-screen HTML preview (§29): cover, info table, per-day entries with section-grouped fields, comments, signature images, evaluation rubric tables; serves BOTH working report and frozen official versions from the same model.
+
+#### Changed
+- `logbookPdf.js` — layout-aware: accent drives cover/headers/table heads; title, toggles, footer, compact density.
+- `LogbookPage` — 👁 Live preview (HTML) for the working report; 👁 per-version preview from FROZEN content; both PDF paths pass the resolved layout.
+- `InternProfile` — new "Report style" section (§18): title override, 4 accent swatches, signature/comment/evaluation toggles → `metadata.report_prefs` (merged, autosaved). Official record never changes — presentation only.
+
+#### Incident log (4th mount corruption)
+- logbookPdf.js truncated by mount immediately after a Write-tool write — caught by the standard esbuild verify, rebuilt via /tmp→cat, re-verified. Procedure held.
+
+#### Test path
+- Profile → Report style → pick Navy + set custom title → Logbook → Live preview (HTML) shows navy cover + title → Export working PDF matches preview exactly → per-version 👁 shows frozen content with same styling → toggles (e.g. hide signatures) reflect in both preview and PDF.
+
+#### Next (R3)
+- DOCX export (docx npm, client-side) + Verification Appendix + public /verify/:id page with QR embedding the Verification ID.
