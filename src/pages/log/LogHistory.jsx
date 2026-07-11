@@ -141,6 +141,36 @@ export default function LogHistory() {
     }
   };
 
+  /** Instant link (no email dependency): create token, share/copy directly. */
+  const copyReviewLink = async () => {
+    if (!internship || !isOnline) {
+      toast.warning('Creating a review link needs a connection.');
+      return;
+    }
+    setEmailing(true);
+    const res = await reviewService.requestReview(internship.id, { linkOnly: true });
+    setEmailing(false);
+    if (!res.success) {
+      toast.error(res.error);
+      return;
+    }
+    let shared = false;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: 'AIntern — review request', url: res.review_link });
+        shared = true;
+      } catch { /* user dismissed */ }
+    }
+    if (!shared) {
+      try {
+        await navigator.clipboard.writeText(res.review_link);
+        toast.success('Review link copied — paste it to your supervisor (WhatsApp/email).');
+      } catch {
+        toast.info(`Share this link: ${res.review_link}`);
+      }
+    }
+  };
+
   const emailSupervisor = async () => {
     if (!internship || !isOnline) {
       toast.warning('Emailing your supervisor needs a connection.');
@@ -251,6 +281,17 @@ export default function LogHistory() {
                 className="w-full rounded-lg border border-slate-300 text-slate-800 py-2.5 font-medium hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {emailing ? 'Sending…' : '✉️ Email my supervisor a review link'}
+              </button>
+            )}
+
+            {(drafts ?? []).some((d) => d.status === 'submitted') && (
+              <button
+                type="button"
+                onClick={copyReviewLink}
+                disabled={emailing || !isOnline || !internship}
+                className="w-full rounded-lg border border-slate-300 text-slate-800 py-2.5 font-medium hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                🔗 Copy review link (no email)
               </button>
             )}
 

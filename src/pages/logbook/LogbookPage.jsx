@@ -20,6 +20,7 @@ import { internshipService } from '../../services/api/internshipService';
 import { logbookService } from '../../services/api/logbookService';
 import { dailyLogService } from '../../services/api/dailyLogService';
 import { reportVersionService } from '../../services/api/reportVersionService';
+import { aiService } from '../../services/api/aiService';
 import { resolveLayout } from '../../services/render/reportLayout';
 import ReportPreview from '../../components/report/ReportPreview';
 import { useToast } from '../../context/ToastContext';
@@ -55,6 +56,8 @@ export default function LogbookPage() {
   const [versions, setVersions] = useState([]);
   const [check, setCheck] = useState(null);
   const [checking, setChecking] = useState(false);
+  const [aiCheck, setAiCheck] = useState(null);     // v1.1 R1.5 — advisory text
+  const [aiChecking, setAiChecking] = useState(false);
   const [creating, setCreating] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [preview, setPreview] = useState(null); // { model, layout, label }
@@ -92,6 +95,37 @@ export default function LogbookPage() {
     setChecking(true);
     setCheck(await reportVersionService.readyCheck(internship));
     setChecking(false);
+  };
+
+  /**
+   * v1.1 R1.5 — AI narrative-quality check (ADVISORY ONLY). The
+   * deterministic Ready Check above remains the authority on whether a
+   * version can be Verified; this reads the prose and flags weak entries.
+   */
+  const runAiCheck = async () => {
+    if (!snapshots?.length) {
+      toast.info('No approved entries to review yet.');
+      return;
+    }
+    setAiChecking(true);
+    const digest = snapshots
+      .map((s) => {
+        const text = Object.values(s.content ?? {})
+          .map((v) => String(v ?? '').trim())
+          .filter((v) => v && v.length > 1)
+          .join(' | ')
+          .slice(0, 280);
+        return `${s.entry_date}: ${text}`;
+      })
+      .join('\n')
+      .slice(0, 7000);
+    const res = await aiService.generate('ready_check', digest);
+    setAiChecking(false);
+    if (res.success) {
+      setAiCheck(res.text.trim());
+    } else {
+      toast.error(res.error);
+    }
   };
 
   const createVersion = async () => {
@@ -240,6 +274,58 @@ export default function LogbookPage() {
           </div>
         ) : (
           <>
+            {/* ── Latest verified — one-tap access (ad-hoc polish) ── */}
+            {(() => {
+              const latestVerified = versions.find((v) => v.status === 'verified');
+              if (!latestVerified) return null;
+              return (
+                <div className="rounded-xl border-2 border-emerald-300 bg-emerald-50 p-4 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <CheckBadgeIcon className="w-6 h-6 text-emerald-600" />
+                      <div>
+                        <p className="font-semibold text-gray-900">Verified logbook v{latestVerified.version}</p>
+                        <p className="text-[11px] font-mono text-emerald-700">{latestVerified.verification_id}</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => exportVersionPdf(latestVerified.id)}
+                      disabled={exporting}
+                      className="inline-flex items-center justify-center gap-1.5 bg-emerald-700 text-white rounded-lg py-2.5 text-sm font-medium hover:bg-emerald-600 disabled:opacity-40"
+                    >
+                      <DocumentArrowDownIcon className="w-4 h-4" /> PDF
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => exportVersionDocx(latestVerified.id)}
+                      disabled={exporting}
+                      className="inline-flex items-center justify-center gap-1.5 border border-emerald-700 text-emerald-800 rounded-lg py-2.5 text-sm font-medium hover:bg-emerald-100 disabled:opacity-40"
+                    >
+                      <DocumentTextIcon className="w-4 h-4" /> Word
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const url = `${window.location.origin}/verify?id=${latestVerified.verification_id}`;
+                      try {
+                        await navigator.clipboard.writeText(url);
+                        toast.success('Verification link copied — anyone can confirm your record with it.');
+                      } catch {
+                        toast.info(url);
+                      }
+                    }}
+                    className="w-full text-xs font-medium text-emerald-800 underline"
+                  >
+                    Copy public verification link
+                  </button>
+                </div>
+              );
+            })()}
+
             {/* ── Official report versions (v1.1) ── */}
             <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
               <div className="flex items-center gap-2">
@@ -247,14 +333,31 @@ export default function LogbookPage() {
                 <h2 className="font-semibold text-gray-900">Official report versions</h2>
               </div>
 
-              <button
-                type="button"
-                onClick={runReadyCheck}
-                disabled={checking || !internship}
-                className="w-full border border-slate-300 text-slate-800 rounded-lg py-2.5 font-medium hover:bg-slate-50 transition-colors disabled:opacity-40"
-              >
-                {checking ? 'Checking…' : '🔍 Run Ready Check'}
-              </button>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={runReadyCheck}
+                  disabled={checking || !internship}
+                  className="border border-slate-300 text-slate-800 rounded-lg py-2.5 text-sm font-medium hover:bg-slate-50 transition-colors disabled:opacity-40"
+                >
+                  {checking ? 'Checking…' : '🔍 Ready Check'}
+                </button>
+                <button
+                  type="button"
+                  onClick={runAiCheck}
+                  disabled={aiChecking || !internship || (snapshots?.length ?? 0) === 0}
+                  className="border border-indigo-300 text-indigo-800 rounded-lg py-2.5 text-sm font-medium hover:bg-indigo-50 transition-colors disabled:opacity-40"
+                >
+                  {aiChecking ? 'Reading…' : '✨ AI quality check'}
+                </button>
+              </div>
+
+              {aiCheck && (
+                <div className="text-xs text-indigo-900 bg-indigo-50 border border-indigo-200 rounded-lg px-3 py-2 whitespace-pre-line">
+                  <p className="font-semibold mb-1">AI narrative review (advisory — does not affect verification):</p>
+                  {aiCheck}
+                </div>
+              )}
 
               {check && (
                 <div className="space-y-1.5">

@@ -2,7 +2,7 @@
 
 <!-- Session 6 review addendum appended July 10, 2026 — see below -->
 
-**Last Updated:** July 11, 2026 — v1.1 R3 complete
+**Last Updated:** July 11, 2026 — v1.1 R3 fully green + ad-hoc UX polish
 
 ## 📊 OVERALL STATUS
 
@@ -15,7 +15,7 @@
 | v1.0 e2e pilot | User end-to-end test | ✅ Completed July 11 |
 | **v1.1 R1** | Report versions + Verification IDs + Ready Check | ✅ Complete |
 | **v1.1 R2** | Presentation templates + HTML live preview + report style prefs | ✅ Complete |
-| **v1.1 R3** | DOCX export + Verification Appendix + public /verify QR page | ✅ Complete (needs `npm install docx qrcode-generator`) |
+| **v1.1 R3** | DOCX export + Verification Appendix + public /verify QR page | ✅ Complete + fully verified |
 | v1.1 R4–R5 | Multi-reviewer workflows → Portfolio Engine | 📅 |
 | Phase 4 | Monetization & Pilot | 📅 |
 
@@ -358,12 +358,57 @@ Both client-side only: `docx` (Word generation, same pattern as jsPDF), `qrcode-
 - `logbookPdf.js` — Verification Appendix page for verified versions: status/ID/version/date/fingerprint/verify-URL table + QR + authenticity note.
 - `LogbookPage` — per-version Word button (DocumentTextIcon); PDF + DOCX exports of verified versions carry the appendix automatically (`verificationOf()` builds the payload with origin-based verify URL).
 
-#### Test path (needs a VERIFIED version — resolve the pending review first)
-1. `npm install docx qrcode-generator` → build → push.
-2. Approve the pending submission via review link → Logbook → Ready Check (clean) → Create official version → Verified + AIN- ID.
-3. Download its PDF → last page = Verification Appendix with QR → scan QR with phone → /verify page shows the green verified card.
-4. Word button → .docx opens in Word, fully editable, appendix included.
-5. Negative test: /verify with a made-up ID → "No verified record found".
+#### Verification — fully green (July 11, 2026)
+- Automated/local: approved the pending submission through the token-only review page, synced History, ran Ready Check clean, created official `v5 verified` with Verification ID `AIN-267F-E4E6`.
+- Automated/local: downloaded v5 PDF and Word exports; real `/verify?id=AIN-267F-E4E6` showed the verified public record; fake `/verify?id=AIN-FAKE-0000` showed "No verified record found".
+- Manual/user phone: opened/downloaded the v5 PDF, scanned the last-page QR, and confirmed it landed on `/verify?id=AIN-267F-E4E6`.
+- Manual/user Wo
+---
 
-#### v1.1 remaining
-- R1.5 AI-narrative ready check; R4 multi-reviewer workflows (needs a real institution's requirements); R5 Portfolio Engine.
+### R3 FULLY GREEN — user end-to-end verification + ad-hoc polish ✅
+**Date:** July 11, 2026
+
+#### R3 manual verification (all passed)
+Supervisor approval → Ready Check clean → **v5 VERIFIED created (AIN-267F-E4E6)** → official PDF downloaded → **QR on last page scanned with a physical phone** → landed on /verify?id=AIN-267F-E4E6 → public page confirmed the record → Word export opened and **edited freely in Microsoft Word** → re-checking /verify confirmed the official record untouched (export/record isolation proven) → fake-ID negative test showed the red "No verified record found" card. The complete §25-27 authenticity chain is proven on real hardware.
+
+#### Ad-hoc polish (user testing feedback)
+1. **Verified logbook hero card** (LogbookPage): the latest Verified version now sits at the top of the page in a green card — one-tap PDF, one-tap Word, and "Copy public verification link" for sharing with universities/employers.
+2. **🔗 Copy review link (no email)** (LogHistory): bypasses email delivery entirely — creates the secure token and shares/copies the link instantly, even when Resend IS configured. Solves the hang when email delivery is slow/unconfigured. (`reviewService.requestReview(id, { linkOnly: true })` → `share_mode: 'link'`, already supported server-side since supervisor-review v2.)
+
+#### v1.1 track status
+- R1, R2, R3: complete and user-verified green.
+- Next: R1.5 (AI narrative-quality Ready Check — small gateway prompt); R4 (multi-reviewer — awaiting a real institution's workflow); R5 (Portfolio Engine).
+
+---
+
+### R5 — Portfolio Engine (+ R1.5 AI Ready Check) ✅ built
+**Date:** July 11, 2026
+**Spec:** v1.1 §43 (Portfolio Engine) + §28 advisory extension (R1.5)
+
+#### What was built
+1. **ai-gateway v6 deployed** — two new server-side feature prompts (client never ships prompts, only evidence):
+   - `portfolio`: verified record → strict JSON career assets (summary, technical/soft skills, 5-8 ATS-friendly résumé bullets, ≤3 highlights, 3 interview talking points). Evidence-only; inventing tasks/numbers/tools is forbidden by the prompt.
+   - `ready_check`: narrative-quality review of entry digests — ≤5 advisory bullets naming weak dates. ADVISORY ONLY; the deterministic Ready Check + server-side `create_report_snapshot()` rule remain the verification authority.
+   - Also fixed a latent local-only `let key2` typo in `import_form` (deployed version was already correct).
+2. **portfolioService.js** — evidence digest builder (approved snapshots + evaluations, 7k-char cap with even middle-thinning that always keeps first 5 + last 10 entries), model-JSON parse + client-side sanitizer (same authority pattern as template import: caps, trims, type guards), cache in `internships.metadata.portfolio` (NO new tables — regenerate any time, verified record stays the source of truth), `toMarkdown()` for copy-paste into résumés/LinkedIn.
+3. **PortfolioPage (/portfolio)** — evidence stats, ✨ Generate/Regenerate, rendered sections (summary, achievements, highlights, skill chips, talking points), Copy-as-text, **Portfolio PDF**.
+4. **portfolioPdf.js** — compact 1-2 page career one-pager (accent from report style prefs); footer stamped with the latest **Verification ID + QR** when a verified report version exists ("Backed by a verified internship record") — the differentiator no résumé builder has.
+5. **R1.5 delivered** (same gateway deploy): "✨ AI quality check" button beside the deterministic Ready Check in LogbookPage; indigo advisory panel, explicitly labeled as not affecting verification.
+6. Routing `/portfolio` (authed) + "Career portfolio" card on Home.
+
+#### Files
+- `supabase/functions/ai-gateway/index.ts` (v6 deployed)
+- `src/services/api/portfolioService.js`, `src/services/pdf/portfolioPdf.js`, `src/pages/portfolio/PortfolioPage.jsx` (new)
+- `src/services/api/aiService.js` (+generic `generate(feature, text, hints, provider)`)
+- `src/pages/logbook/LogbookPage.jsx` (AI quality check), `src/router.jsx`, `src/pages/intern/InternHome.jsx`
+
+#### Verification
+- esbuild syntax pass on all new files + all inserted blocks; null-scan clean; gateway v6 ACTIVE (compile verified by deployer).
+- Sandbox mount served stale reads of Edit-modified files this session (6th incident) — verification done from authoritative Windows-side content; no bash writes were made to those files.
+
+#### User test path
+Home → Career portfolio → Generate → sections render → Copy as text → Portfolio PDF (check the QR/Verification footer) → Logbook → ✨ AI quality check.
+
+#### v1.1 track status
+- R1, R2, R3: user-verified green. R1.5 + R5: built, awaiting user e2e.
+- Remaining: R4 (multi-reviewer — still awaiting a real institution's workflow), then Phase 4 monetization (internship pass + entitlements).

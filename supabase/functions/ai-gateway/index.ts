@@ -25,6 +25,7 @@
  *
  * @file supabase/functions/ai-gateway/index.ts
  * @created July 9, 2026 - Session 3
+ * @updated July 11, 2026 - v6: portfolio (R5) + ready_check (R1.5) features
  */
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
@@ -110,6 +111,36 @@ const FEATURES: Record<string, (hints: Record<string, string>) => string> = {
     '2-4 sentences on strengths, 1-2 on areas to improve. Never invent incidents.',
     h.language ? `Respond in ${h.language}.` : '',
     'Return ONLY the draft comment.',
+  ].filter(Boolean).join(' '),
+
+  // v1.1 R5 — Portfolio Engine (spec §43): verified record → career assets.
+  portfolio: (h) => [
+    'You are a career coach turning a VERIFIED internship record (daily logs approved and',
+    'digitally signed by the supervisor, plus supervisor evaluations) into professional career assets.',
+    'Return STRICT JSON only (no markdown fences, no commentary) with exactly these keys:',
+    '{"summary": string (2-3 sentence professional summary, first person implied, no "I"),',
+    '"technical_skills": string[] (max 10, concrete tools/technologies/methods evidenced in the logs),',
+    '"soft_skills": string[] (max 8, grounded in supervisor evaluations and log evidence),',
+    '"resume_bullets": string[] (5-8 bullets, each starting with a strong past-tense action verb,',
+    'quantified where the data allows, ATS-friendly, max 30 words each),',
+    '"highlights": [{"title": string, "description": string}] (max 3 standout projects or achievements),',
+    '"talking_points": string[] (exactly 3 concise interview talking points connecting this experience to employer value)}.',
+    'Base EVERYTHING strictly on the provided evidence. Never invent tasks, numbers, tools, or outcomes.',
+    h.industry ? `The internship field is: ${h.industry}.` : '',
+    h.language ? `Write all values in ${h.language}.` : 'Write in the same language as the logs.',
+  ].filter(Boolean).join(' '),
+
+  // v1.1 R1.5 — AI narrative-quality Ready Check (advisory only; the
+  // deterministic check in reportVersionService remains the authority).
+  ready_check: (h) => [
+    'You are a quality reviewer for an internship logbook about to be frozen into an official report.',
+    'You receive a digest of daily entries (date + text). Assess NARRATIVE quality only:',
+    'completeness and clarity of what was done, how, and what was learned or achieved.',
+    'Return at most 5 short bullet lines (plain text, each starting with "- "), each naming the',
+    'date(s) concerned and the specific weakness (vague summary, missing outcome, repeated filler)',
+    'with a one-clause suggestion. If overall quality is good, return one line saying the logbook',
+    'reads well, plus at most one optional improvement. Never invent content; judge only what is provided.',
+    h.language ? `Respond in ${h.language}.` : 'Respond in the same language as the entries.',
   ].filter(Boolean).join(' '),
 };
 
@@ -515,7 +546,7 @@ Deno.serve(async (req) => {
 
       let tier: 'byok' | 'bundled';
       let provider: string;
-      let key2: string;
+      let key: string;
       if (cred?.encrypted_key) {
         if (!ENC_SECRET) return json({ success: false, error: 'Server missing encryption secret' }, 500);
         tier = 'byok';

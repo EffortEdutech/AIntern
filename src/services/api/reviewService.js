@@ -13,10 +13,20 @@
 import { supabase } from '../supabase/client';
 
 class ReviewService {
-  async requestReview(internshipId) {
+  /**
+   * @param {string} internshipId
+   * @param {Object} opts - { linkOnly: true } skips email entirely and
+   *   returns the secure link for manual sharing (WhatsApp/copy) even
+   *   when email IS configured — instant, no delivery dependency.
+   */
+  async requestReview(internshipId, opts = {}) {
     try {
       const { data, error } = await supabase.functions.invoke('supervisor-review', {
-        body: { action: 'request_review', internship_id: internshipId },
+        body: {
+          action: 'request_review',
+          internship_id: internshipId,
+          ...(opts.linkOnly ? { share_mode: 'link' } : {}),
+        },
       });
       if (error) {
         let message = error.message;

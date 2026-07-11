@@ -55,6 +55,14 @@ export const aiService = {
   /** Draft an evaluation comment from log summaries (Phase 2 supervisor flow). */
   draftEvalComment: (text, hints = {}, provider = 'openai') =>
     call({ action: 'generate', feature: 'eval_comment', text, hints, provider }),
+
+  /**
+   * Generic gateway call for any server-registered feature prompt
+   * (v1.1: 'portfolio' R5, 'ready_check' R1.5). The prompt lives
+   * server-side; the client only ships the evidence digest.
+   */
+  generate: (feature, text, hints = {}, provider = 'openai') =>
+    call({ action: 'generate', feature, text, hints, provider }),
 };
 
 export default aiService;

@@ -183,6 +183,23 @@ export default function InternHome() {
                 <span className="text-gray-300 text-xl">›</span>
               </div>
             </Link>
+
+            {/* ── Portfolio (v1.1 R5) ── */}
+            <Link
+              to="/portfolio"
+              className="block bg-white rounded-xl border border-gray-200 p-5 hover:border-gray-300 transition-colors"
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-semibold text-gray-900">Career portfolio</h3>
+                  <p className="text-sm text-gray-500 mt-0.5">
+                    Turn your verified record into résumé bullets, skills, and
+                    interview talking points.
+                  </p>
+                </div>
+                <span className="text-gray-300 text-xl">›</span>
+              </div>
+            </Link>
           </>
         )}
       </div>
