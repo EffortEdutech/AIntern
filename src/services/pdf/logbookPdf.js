@@ -13,6 +13,7 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { LAYOUT_DEFAULTS } from '../render/reportLayout';
+import { qrPngDataUrl } from '../render/qr';
 
 const M = 18;
 const W = 210 - M * 2;
@@ -48,7 +49,7 @@ function fieldRows(data, template) {
   return rows;
 }
 
-export function generateLogbookPdf({ profile, internship, snapshots, evaluations, template, layout = null }) {
+export function generateLogbookPdf({ profile, internship, snapshots, evaluations, template, layout = null, verification = null }) {
   const L = { ...LAYOUT_DEFAULTS, ...(layout ?? {}) };
   const accent = L.accent;
   const compact = L.density === 'compact';
@@ -227,6 +228,52 @@ export function generateLogbookPdf({ profile, internship, snapshots, evaluations
       }
       y += 6;
     });
+  }
+
+  // ── Verification Appendix (v1.1 R3, spec 25-27) — verified only ─────
+  if (verification?.verification_id) {
+    doc.addPage();
+    y = M;
+    doc.setFontSize(fs(16));
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(accent[0], accent[1], accent[2]);
+    doc.text('Verification Appendix', M, y);
+    y += 8;
+
+    autoTable(doc, {
+      startY: y,
+      margin: { left: M, right: M },
+      theme: 'grid',
+      styles: { fontSize: fs(9), cellPadding: 1.8, lineColor: [226, 232, 240], textColor: [30, 41, 59] },
+      columnStyles: { 0: { fontStyle: 'bold', cellWidth: 55, fillColor: [248, 250, 252] } },
+      body: [
+        ['Verification status', 'VERIFIED'],
+        ['Verification ID', verification.verification_id],
+        ['Report version', `v${verification.version}`],
+        ['Snapshot created', String(verification.created_at).slice(0, 10)],
+        ['Record fingerprint', String(verification.content_hash)],
+        ['Verify online', verification.verify_url],
+      ],
+    });
+    y = doc.lastAutoTable.finalY + 8;
+
+    const qrUrl = qrPngDataUrl(verification.verify_url);
+    if (qrUrl) {
+      try {
+        doc.addImage(qrUrl, 'PNG', M, y, 34, 34);
+      } catch { /* QR optional */ }
+    }
+    doc.setFontSize(fs(9));
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(71, 85, 105);
+    const note = doc.splitTextToSize(
+      'Scan the QR code or visit the link above to confirm this document was '
+      + 'generated from an officially verified internship record. Every entry was '
+      + 'individually approved and digitally signed by the workplace supervisor. '
+      + 'This appendix verifies authenticity without exposing report content.',
+      W - 42,
+    );
+    doc.text(note, M + 40, y + 5);
   }
 
   const pages = doc.getNumberOfPages();

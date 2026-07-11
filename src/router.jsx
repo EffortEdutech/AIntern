@@ -41,6 +41,7 @@ const TemplateStudioPage = lazy(() => import('./pages/studio/TemplateStudioPage'
 // Public supervisor page — token-gated inside the page/Edge Function,
 // deliberately NOT wrapped in <Auth> (supervisors have no accounts).
 const SupervisorReview = lazy(() => import('./pages/review/SupervisorReview'));
+const VerifyPage = lazy(() => import('./pages/verify/VerifyPage'));
 
 // 404
 const NotFoundPage = () => (
@@ -62,6 +63,7 @@ export const router = createBrowserRouter([
   { path: ROUTES.REGISTER,        element: <Register /> },
   { path: ROUTES.FORGOT_PASSWORD, element: <ForgotPassword /> },
   { path: '/review',              element: <SupervisorReview /> },
+  { path: '/verify',              element: <VerifyPage /> },
 
   // ── Intern (authenticated) ──────────────────────────────────────────
   { path: '/',           element: <Auth><InternHome /></Auth> },

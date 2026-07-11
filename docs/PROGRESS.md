@@ -2,7 +2,7 @@
 
 <!-- Session 6 review addendum appended July 10, 2026 — see below -->
 
-**Last Updated:** July 11, 2026 — v1.1 R2 complete
+**Last Updated:** July 11, 2026 — v1.1 R3 complete
 
 ## 📊 OVERALL STATUS
 
@@ -15,7 +15,8 @@
 | v1.0 e2e pilot | User end-to-end test | ✅ Completed July 11 |
 | **v1.1 R1** | Report versions + Verification IDs + Ready Check | ✅ Complete |
 | **v1.1 R2** | Presentation templates + HTML live preview + report style prefs | ✅ Complete |
-| v1.1 R3–R5 | DOCX + QR /verify → multi-reviewer → portfolio | 📅 |
+| **v1.1 R3** | DOCX export + Verification Appendix + public /verify QR page | ✅ Complete (needs `npm install docx qrcode-generator`) |
+| v1.1 R4–R5 | Multi-reviewer workflows → Portfolio Engine | 📅 |
 | Phase 4 | Monetization & Pilot | 📅 |
 
 ---
@@ -331,4 +332,38 @@ Spec §14-18 (Template Engine), §29 (Live Preview). Design decision: rather tha
 - Profile → Report style → pick Navy + set custom title → Logbook → Live preview (HTML) shows navy cover + title → Export working PDF matches preview exactly → per-version 👁 shows frozen content with same styling → toggles (e.g. hide signatures) reflect in both preview and PDF.
 
 #### Next (R3)
-- DOCX export (docx npm, client-side) + Verification Appendix + public /verify/:id page with QR embedding the Verification ID.
+- DOCX export (docx npm, client-side) + Verification Appendix + pub
+---
+
+### R3: DOCX Export + Verification Appendix + Public QR Verify ✅
+**Date:** July 11, 2026
+
+Spec §22 (Word), §25-27 (appendix/ID/QR).
+
+#### ⚠ REQUIRED before build — two new production dependencies (AGENTS.md approval noted)
+```
+npm install docx qrcode-generator
+```
+Both client-side only: `docx` (Word generation, same pattern as jsPDF), `qrcode-generator` (dependency-free QR).
+
+#### Database (migration 005, applied)
+- `verify_report(p_verification_id)` — SECURITY DEFINER, **anon-executable BY DESIGN** (public verification is the feature): returns ONLY §27 disclosure fields for VERIFIED snapshots (intern name, institution, company, period, version, verified date, fingerprint, counts). Never report content.
+
+#### New
+- `/verify` (public route) — `VerifyPage.jsx`: ID input or ?id= from QR, verified card (green shield + public fields + fingerprint) / not-found warning. The QR in every exported report lands here.
+- `src/services/render/qr.js` — dependency-free QR → canvas → PNG dataURL (works in jsPDF + docx).
+- `src/services/docx/logbookDocx.js` — editable Word export from FROZEN snapshots: cover, info table, per-day entries with signature images, evaluations, Verification Appendix with QR. Word edits never touch the official record (§34 note embedded in the appendix).
+
+#### Changed
+- `logbookPdf.js` — Verification Appendix page for verified versions: status/ID/version/date/fingerprint/verify-URL table + QR + authenticity note.
+- `LogbookPage` — per-version Word button (DocumentTextIcon); PDF + DOCX exports of verified versions carry the appendix automatically (`verificationOf()` builds the payload with origin-based verify URL).
+
+#### Test path (needs a VERIFIED version — resolve the pending review first)
+1. `npm install docx qrcode-generator` → build → push.
+2. Approve the pending submission via review link → Logbook → Ready Check (clean) → Create official version → Verified + AIN- ID.
+3. Download its PDF → last page = Verification Appendix with QR → scan QR with phone → /verify page shows the green verified card.
+4. Word button → .docx opens in Word, fully editable, appendix included.
+5. Negative test: /verify with a made-up ID → "No verified record found".
+
+#### v1.1 remaining
+- R1.5 AI-narrative ready check; R4 multi-reviewer workflows (needs a real institution's requirements); R5 Portfolio Engine.

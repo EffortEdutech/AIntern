@@ -26,7 +26,20 @@ import { useToast } from '../../context/ToastContext';
 import {
   DocumentArrowDownIcon, ShieldCheckIcon, ClipboardDocumentCheckIcon,
   ExclamationTriangleIcon, XCircleIcon, CheckBadgeIcon, EyeIcon,
+  DocumentTextIcon,
 } from '@heroicons/react/24/outline';
+
+/** Verification payload for exports of VERIFIED versions (spec 25-27). */
+function verificationOf(v) {
+  if (v?.status !== 'verified' || !v?.verification_id) return null;
+  return {
+    verification_id: v.verification_id,
+    version: v.version,
+    created_at: v.created_at,
+    content_hash: v.content_hash,
+    verify_url: `${window.location.origin}/verify?id=${v.verification_id}`,
+  };
+}
 
 function summarize(content) {
   const text = content?.['tasks.task_summary'] || '';
@@ -114,10 +127,43 @@ export default function LogbookPage() {
         evaluations: c.evaluations ?? [],
         template: c.template ?? null,
         layout: resolveLayout(c.template, internship),
+        verification: verificationOf(res.data),
       });
       toast.success(`Official PDF (v${res.data.version}) downloaded.`);
     } catch (err) {
       toast.error('PDF export failed: ' + err.message);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  /** Editable Word export of a FROZEN official version (spec section 22). */
+  const exportVersionDocx = async (versionId) => {
+    setExporting(true);
+    try {
+      const res = await reportVersionService.getVersion(versionId);
+      if (!res.success) throw new Error(res.error);
+      const c = res.data.content;
+      const verification = verificationOf(res.data);
+      let qrPng = null;
+      if (verification) {
+        const { qrPngDataUrl } = await import('../../services/render/qr');
+        qrPng = qrPngDataUrl(verification.verify_url);
+      }
+      const { generateLogbookDocx } = await import('../../services/docx/logbookDocx');
+      await generateLogbookDocx({
+        profile: c.intern,
+        internship: c.internship,
+        snapshots: c.entries ?? [],
+        evaluations: c.evaluations ?? [],
+        template: c.template ?? null,
+        layout: resolveLayout(c.template, internship),
+        verification,
+        qrPng,
+      });
+      toast.success(`Word document (v${res.data.version}) downloaded.`);
+    } catch (err) {
+      toast.error('Word export failed: ' + err.message);
     } finally {
       setExporting(false);
     }
@@ -265,6 +311,15 @@ export default function LogbookPage() {
                           className="p-2 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50"
                         >
                           <EyeIcon className="w-5 h-5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => exportVersionDocx(v.id)}
+                          disabled={exporting}
+                          aria-label={`Download Word document of version ${v.version}`}
+                          className="p-2 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40"
+                        >
+                          <DocumentTextIcon className="w-5 h-5" />
                         </button>
                         <button
                           type="button"
