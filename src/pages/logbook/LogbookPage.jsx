@@ -21,6 +21,7 @@ import { logbookService } from '../../services/api/logbookService';
 import { dailyLogService } from '../../services/api/dailyLogService';
 import { reportVersionService } from '../../services/api/reportVersionService';
 import { aiService } from '../../services/api/aiService';
+import { useAccess } from '../../hooks/useAccess';
 import { resolveLayout } from '../../services/render/reportLayout';
 import ReportPreview from '../../components/report/ReportPreview';
 import { useToast } from '../../context/ToastContext';
@@ -50,6 +51,10 @@ function summarize(content) {
 export default function LogbookPage() {
   const { profile } = useAuth();
   const toast = useToast();
+  const { access } = useAccess();
+  // Phase 4: official versions + exports need trial-or-pass (server enforces
+  // version creation independently; export gating is client UX).
+  const passLocked = access ? !access.active : false;
   const [internship, setInternship] = useState(null);
   const [snapshots, setSnapshots] = useState(null);
   const [evaluations, setEvaluations] = useState([]);
@@ -293,7 +298,7 @@ export default function LogbookPage() {
                     <button
                       type="button"
                       onClick={() => exportVersionPdf(latestVerified.id)}
-                      disabled={exporting}
+                      disabled={exporting || passLocked}
                       className="inline-flex items-center justify-center gap-1.5 bg-emerald-700 text-white rounded-lg py-2.5 text-sm font-medium hover:bg-emerald-600 disabled:opacity-40"
                     >
                       <DocumentArrowDownIcon className="w-4 h-4" /> PDF
@@ -301,7 +306,7 @@ export default function LogbookPage() {
                     <button
                       type="button"
                       onClick={() => exportVersionDocx(latestVerified.id)}
-                      disabled={exporting}
+                      disabled={exporting || passLocked}
                       className="inline-flex items-center justify-center gap-1.5 border border-emerald-700 text-emerald-800 rounded-lg py-2.5 text-sm font-medium hover:bg-emerald-100 disabled:opacity-40"
                     >
                       <DocumentTextIcon className="w-4 h-4" /> Word
@@ -332,6 +337,15 @@ export default function LogbookPage() {
                 <ClipboardDocumentCheckIcon className="w-5 h-5 text-slate-700" />
                 <h2 className="font-semibold text-gray-900">Official report versions</h2>
               </div>
+
+              {passLocked && (
+                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  Your free trial has ended — creating official versions and
+                  exporting need an internship pass. Your approved record stays
+                  yours and viewable, always.{' '}
+                  <a href="/profile" className="underline font-medium">Activate a pass</a>.
+                </p>
+              )}
 
               <div className="grid grid-cols-2 gap-2">
                 <button
@@ -378,7 +392,7 @@ export default function LogbookPage() {
                   <button
                     type="button"
                     onClick={createVersion}
-                    disabled={creating || (snapshots.length === 0)}
+                    disabled={creating || (snapshots.length === 0) || passLocked}
                     className="w-full mt-1 bg-slate-900 text-white rounded-lg py-3 font-medium hover:bg-slate-700 transition-colors disabled:opacity-40"
                   >
                     {creating
@@ -418,7 +432,7 @@ export default function LogbookPage() {
                         <button
                           type="button"
                           onClick={() => exportVersionDocx(v.id)}
-                          disabled={exporting}
+                          disabled={exporting || passLocked}
                           aria-label={`Download Word document of version ${v.version}`}
                           className="p-2 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40"
                         >
@@ -427,7 +441,7 @@ export default function LogbookPage() {
                         <button
                           type="button"
                           onClick={() => exportVersionPdf(v.id)}
-                          disabled={exporting}
+                          disabled={exporting || passLocked}
                           aria-label={`Download PDF of version ${v.version}`}
                           className="p-2 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40"
                         >

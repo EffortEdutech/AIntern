@@ -186,6 +186,16 @@ Deno.serve(async (req) => {
         .maybeSingle();
       if (!internship) return json({ success: false, error: 'Internship not found' }, 404);
 
+      // Phase 4 gate: requesting reviews requires an active trial or pass.
+      const { data: access } = await admin.rpc('access_state', { p_user: user.id });
+      if (!access?.active) {
+        return json({
+          success: false,
+          error: 'Your free trial has ended — activate an internship pass (Profile → Internship pass) to request supervisor reviews. Your drafts and data are never locked.',
+          code: 'PASS_REQUIRED',
+        }, 403);
+      }
+
       // Pending submissions to cover
       const { data: pending } = await admin
         .from('entry_submissions')

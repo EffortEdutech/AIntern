@@ -182,8 +182,21 @@ export function DynamicForm({
 
         // Required validation
         if (field.required) {
-          if (value === undefined || value === null || value === '' || 
-              (Array.isArray(value) && value.length === 0)) {
+          // AINTERN: an array with nothing meaningful in it counts as empty
+          // too — a superset of the original length===0 check. Covers both
+          // "list" fields (array of blank strings, e.g. an untouched single
+          // row) and "repeater" fields (array of objects whose values are
+          // all blank, e.g. an untouched task card). Photo/signature
+          // attachment-id arrays are never blank strings/objects, so this
+          // is a strict superset with no behavior change there.
+          const isBlankEntry = (v) => {
+            if (v && typeof v === 'object' && !Array.isArray(v)) {
+              return Object.values(v).every((sub) => String(sub ?? '').trim() === '');
+            }
+            return String(v ?? '').trim() === '';
+          };
+          const isBlankArray = Array.isArray(value) && value.every(isBlankEntry);
+          if (value === undefined || value === null || value === '' || isBlankArray) {
             newErrors[fieldPath] = `${field.field_name} is required`;
           }
         }

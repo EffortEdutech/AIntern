@@ -412,3 +412,206 @@ Home → Career portfolio → Generate → sections render → Copy as text → 
 #### v1.1 track status
 - R1, R2, R3: user-verified green. R1.5 + R5: built, awaiting user e2e.
 - Remaining: R4 (multi-reviewer — still awaiting a real institution's workflow), then Phase 4 monetization (internship pass + entitlements).
+
+---
+
+### Phase 4 S13 — Monetization: internship pass + entitlement gating ✅ built
+**Date:** July 12, 2026
+**Decisions (user-approved):** entitlements first with promo-code/manual activation (payment provider = Phase 4b, after the pilot validates pricing); **RM39 (3-month) / RM59 (6-month)**; trial gate locks reviews + official versions + exports (drafting free forever); **pass includes bundled AI** (trial/no-pass = BYOK only).
+
+#### Model
+- **7-day free trial** derived from profile creation — no schema column, no clock to tamper with client-side.
+- `entitlements` table (immutable rows, owner SELECT only, ALL writes server-side; passes stack — new pass extends the latest expiry). `promo_codes` table (RLS on, ZERO policies — never client-readable; INFO advisor accepted BY DESIGN).
+- `access_state(uuid)` (service_role only) + `get_access_state()` (authenticated) + `redeem_promo_code(text)` — SECURITY DEFINER, search_path pinned.
+
+#### Server enforcement (the authority)
+1. `create_report_snapshot()` re-created with access guard → `PASS_REQUIRED` exception after trial without pass (migration 006).
+2. **supervisor-review v4**: `request_review` checks `access_state` → 403 PASS_REQUIRED.
+3. **ai-gateway v7**: bundled tier requires an active pass in BOTH `generate` and `import_form` (BYOK unaffected; metering/caps unchanged).
+
+#### Client UX (never the authority)
+- `entitlementService.js` (PASS_PLANS display config — prices changeable without migration), `useAccess` hook (module cache + refresh).
+- Profile → **Internship pass** section (`PassSection.jsx`): trial countdown / active-pass / expired states, RM39/RM59 plan cards, activation-code input ("online payment coming soon").
+- Gates: Home status strip (trial days left / pass badge / expired warning), History review buttons + note, Logbook create-version + official PDF/Word (hero + version list) + note, Portfolio PDF + note. Viewing the approved record and the working HTML preview stay free — "your data is always yours."
+
+#### Pilot activation codes (seeded in promo_codes)
+- `PILOT3M-2026` — 3-month pass, 10 uses, expires 2026-12-31
+- `PILOT6M-2026` — 6-month pass, 5 uses, expires 2026-12-31
+- `EFF-TEST-PASS` — 6-month pass, 3 uses, no expiry (founder testing)
+Create more via SQL insert into `promo_codes`; manual activation = insert into `entitlements` with source='manual'.
+
+#### Verification
+- Migration applied; `access_state()` smoke-tested (sample user: trial_active until 2026-07-15, active=true). Advisor sweep run: caught Supabase default-privilege auto-grant on `access_state` (anon-executable) → sealed with explicit anon/authenticated revokes (follow-up migration + 006 file updated). Remaining authenticated-SECURITY-DEFINER warns accepted BY DESIGN; promo_codes no-policy INFO intentional; leaked-password-protection warn pre-existing (Auth setting, user's call).
+- esbuild syntax pass on all new files + all gate insertions; null-scan clean. Sandbox mount again served stale reads of Edit-modified files — verified from authoritative content; graphify refresh deferred to Windows.
+
+#### User test path
+1. Profile → Internship pass shows trial countdown (or expired if account >7 days old — likely for test accounts!).
+2. Redeem `EFF-TEST-PASS` → green pass card, Home badge flips.
+3. Expired-state test on an old no-pass account: History review buttons disabled + note; Logbook create/export disabled; ai polish via bundled fails with PASS_REQUIRED (BYOK still works); after redeeming, everything unlocks.
+
+#### Next (Phase 4b + pilot)
+- S14 pilot: 3–5 real interns, one university logbook format, `ai_usage` telemetry → tune bundled cap, validate RM39/RM59.
+- Payment provider integration (toyyibPay FPX and/or Stripe) writing `entitlements` with source='payment' via webhook Edge Function.
+- Housekeeping backlog: cron digests (set AINTERN_APP_URL), token rate limiting, draft backup opt-in.
+
+---
+
+## PDF-IMPORT UPGRADE TRACK (Claude planning: "custom input from uploaded PDF")
+
+Two cases scoped: **Case 1** (daily-log point-form import, this session) and
+**Case 2** (full multi-chapter training-report import, next). Both feed the
+existing Template Studio / `report_versions` pipeline rather than replacing
+it — the Verification Appendix + QR (R3) and immutability rules are untouched
+by design.
+
+### Phase A: Point-form daily log import ✅
+**Date:** July 12, 2026
+
+Reviewed against two real samples (`docs/sample/INTERNSHIP LOGBOOK DAILY
+REPORT - MyePortfolio@UTM.pdf`, 29MB/18-page filled printout; confirms the
+target shape: a Week/Day/Date/Activity table where "Activity" is really
+several distinct items per day, not one paragraph).
+
+#### New
+- `src/services/render/fieldRows.js` — shared entry-content → display-rows
+  helper (`fieldValueLines`, `fieldRows`), extracted from three previously
+  **identical** local copies in `logbookPdf.js`, `logbookDocx.js`, and
+  `ReportPreview.jsx` that each did `String(v)` and would have flattened an
+  array value into `"a,b,c"`. Now a single source of truth: 1 line renders
+  as before, >1 line renders as bullets — HTML preview/PDF/DOCX can't drift.
+
+#### Changed — new `list` field type (point-form entries, e.g. daily activities)
+- `ai-gateway` (v8): `import_form` now tries **PDF text extraction first**
+  (`npm:unpdf`, works with ANY provider — no more OpenAI-can't-do-PDF
+  restriction for text-layer PDFs) and only falls back to vision for
+  scanned/photographed PDFs (same Gemini/Claude-only restriction as before,
+  now scoped to just that fallback). Extraction prompt updated: `"list"`
+  added to the field-type enum (several short items per entry vs one
+  continuous "textarea"), plus explicit guidance to infer the general
+  structure from a **filled example** rather than transcribing the specific
+  instance data. `list` added to `sanitizeTemplate()`'s `ALLOWED_FIELD_TYPES`.
+- `FieldRenderer.jsx` — new `list` case: add/remove point rows, each a short
+  textarea with its own `✨ Polish` button (scoped per-row — polishing all
+  points at once risked the model merging/reordering distinct activities).
+- `DynamicForm.jsx` — required-field check generalized: an array of
+  only-blank strings (an untouched `list` field) now counts as empty too,
+  same as `length === 0` did before (photo/signature id arrays are never
+  blank strings, so no behavior change there).
+- `logbookPdf.js` / `logbookDocx.js` — bulleted fields render as `"• line"`
+  per line in the PDF cell / one Word paragraph per bullet respectively.
+- `TemplateStudioPage.jsx` — provider labels no longer say "photo only" for
+  OpenAI (text-layer PDFs now work); extraction toast shows text vs image.
+
+#### Verification
+- esbuild syntax pass on all 8 new/changed files (fieldRows.js, logbookPdf.js,
+  logbookDocx.js, ReportPreview.jsx, FieldRenderer.jsx, DynamicForm.jsx,
+  TemplateStudioPage.jsx, ai-gateway/index.ts) — run from a fresh `/tmp`
+  esbuild install since the repo's `node_modules` is Windows-built and
+  doesn't run in the Linux sandbox (`@esbuild/win32-x64` vs `linux-x64`).
+- Null-byte corruption scan clean (checked via Python byte count, not grep —
+  a naive `grep -c $'\x00'` gives a false positive since bash collapses that
+  pattern to an empty string).
+- Graphify refreshed: 1299→1406 nodes, 2594→2787 edges, 91→114 communities.
+- Not yet run: a live end-to-end extraction test through Template Studio
+  (needs a BYOK key + a real upload — recommend a single representative
+  week/page of the UTM sample, not the full 29MB file, per the existing 5MB
+  client-side cap).
+
+### Phase A.2: Field visibility toggle + repeatable Tasks Performed ✅
+**Date:** July 12, 2026
+
+Course-corrected from the original Case 1 plan: no AI/PDF pipeline needed for
+AIntern's own default daily log page — just two direct, Profile-configurable
+UX features. Decisions locked with the user beforehand: repeater repeats
+category+description only (outcomes/hours stay once-per-day); the visibility
+toggle covers every field in every section, default all shown; keep the
+Phase A list-type/PDF-import work as-is for Template Studio, build these
+additively.
+
+#### New — field visibility (Profile → "Daily log fields")
+- `src/utils/fieldVisibility.js` — `applyFieldVisibility(template, internship)`
+  drops hidden fields (and any section left empty) from the fields_schema
+  handed to `DynamicForm`. Preference lives in
+  `internships.metadata.field_prefs.hidden` (array of `section_id.field_id`
+  paths) — additive metadata, no schema change. Only ever touches the live
+  INPUT form (`DailyLogPage.jsx`); already-approved entries, the working
+  logbook preview, and official report versions still show whatever data
+  exists regardless of the current toggle — hiding a field must never make
+  past evidence disappear.
+- `DynamicForm.jsx` required-check: hiding a required field now correctly
+  un-blocks submission, since the hidden field is dropped from the schema
+  before validation ever sees it (no special-casing needed there).
+- `InternProfile.jsx` — new "Daily log fields" section listing every
+  section/field of the intern's ACTIVE template with a show/hide checkbox.
+
+#### New — repeatable Tasks Performed (opt-in v2 template)
+- Migration `007_daily_log_v2_repeater_tasks.sql` (applied) — seeds a
+  SEPARATE public template `aintern-daily-log-v2` ("Daily Task Sheet,
+  multiple tasks per day"). **`aintern-daily-log-v1` is untouched** —
+  its field paths (`tasks.task_category`, `tasks.task_summary`) are frozen
+  into every `approved_snapshot` and `report_versions.content` created
+  under it so far, and mutating it in place would have silently broken how
+  the live (non-official) logbook preview renders that historical data.
+  v2's "Tasks Performed" section instead has one `repeater` field
+  (`tasks.entries`, item_fields: `task_category` select + `task_summary`
+  textarea) that repeats via an "+ Add task" button; `outcomes` and
+  `hours_spent` stay singular per day, per the locked decision.
+- New `repeater` field type: `FieldRenderer.jsx` gained an
+  `AinternRepeaterField` component (add/remove task cards, per-item
+  ✨ Polish scoped to that item's description — same reasoning as the
+  `list` type's per-row polish). Minimal by design: only `select`/`textarea`
+  sub-fields are supported (all Tasks Performed needs today); it doesn't
+  recurse through the full FieldRenderer switch.
+- `DynamicForm.jsx`'s blank-array required-check generalized further to
+  treat an array of all-blank OBJECTS (an untouched repeater item) as empty
+  too, alongside the existing all-blank-strings case. Per-item sub-field
+  `required` flags are informational only — the only thing actually
+  enforced is the repeater itself being non-blank overall, so submission
+  isn't blocked mid-typing on a half-filled task.
+- `fieldRows.js` gained `repeaterLines()` — formats each repeater item into
+  one bullet line (`"Project — Fixed the login bug"`, sub-fields joined by
+  " — " in item_fields order) instead of `String({...})` → `"[object
+  Object]"`. No changes needed in `logbookPdf.js`/`logbookDocx.js`/
+  `ReportPreview.jsx` — they already just consume whatever `lines` array
+  `fieldRows()` returns.
+- `InternProfile.jsx` — "Logbook format" section gained an opt-in "Allow
+  multiple tasks per day" checkbox (hidden if a Template-Studio custom
+  import is active). Toggling flips `internships.daily_template_id` between
+  `null` (v1) and v2's id — same mechanism Template Studio already uses for
+  custom formats. Explicit caveat shown inline: "Only applies to new logs —
+  entries you've already approved keep showing exactly as they were."
+  Nobody is auto-migrated; the pilot internship stays on v1 unless the
+  intern flips this themselves.
+
+#### Verification
+- Migration applied via Supabase MCP (project `wdhdjhvvngssnszqgiyk`);
+  confirmed both `aintern-daily-log-v1` (untouched, v1.0) and
+  `aintern-daily-log-v2` (new, v2.0) rows exist. `get_advisors` security
+  sweep: no new findings — all warnings are the pre-existing, already-
+  accepted-by-design ones from Phase 4 S13.
+- ⚠ **7th mount-staleness incident, different flavor**: the sandbox's bash
+  mount was serving a snapshot of `fieldRows.js`, `DynamicForm.jsx`,
+  `FieldRenderer.jsx`, `InternProfile.jsx`, `dailyLogService.js`, and
+  `DailyLogPage.jsx` roughly 1h42m stale (confirmed via `stat` mtime vs
+  `date`, and via a bash-side probe file proving new writes ARE visible
+  immediately — only Edit-tool-modified existing files were stale, i.e. a
+  one-way/interval sync gap rather than a frozen mount). esbuild/graphify
+  would have silently indexed the PRE-Phase-A.2 content if run through
+  bash right now. Verified correctness instead via direct `Read`-tool
+  inspection of every changed file's tail (all close cleanly — matching
+  `export default`, no dangling JSX/braces) — this is authoritative since
+  Read/Edit operate on the real Windows-side files, not the stale mount.
+  **Graphify refresh deferred** — run `.\scripts\graphify.ps1 update .`
+  from Windows (or ask again once the sandbox mount has resynced) rather
+  than refresh now from stale content.
+- Not yet done: a live click-through test of both features in the running
+  app (field toggles hiding/showing on `/log`, multi-task add/remove +
+  polish, PDF/DOCX/preview rendering a multi-task day).
+
+#### Next (Phase B)
+- `import_report_structure` gateway action (text-first, chapter classifier:
+  `narrative` vs `auto:entries`/`auto:evaluations`/`auto:company_profile`),
+  `/final-report` authoring page, per-chapter AI draft-assist (evidence-only,
+  same guardrail as `eval_comment`/`portfolio`), migration extending
+  `create_report_snapshot()` for `p_type='final'`, chapter-aware PDF/DOCX
+  renderer ending in the existing Verification Appendix + QR.

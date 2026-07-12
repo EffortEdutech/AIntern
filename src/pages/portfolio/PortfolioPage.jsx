@@ -20,6 +20,7 @@ import { reportVersionService } from '../../services/api/reportVersionService';
 import { portfolioService } from '../../services/api/portfolioService';
 import { resolveLayout } from '../../services/render/reportLayout';
 import { useToast } from '../../context/ToastContext';
+import { useAccess } from '../../hooks/useAccess';
 import {
   SparklesIcon, DocumentArrowDownIcon, ClipboardIcon,
   ShieldCheckIcon, BriefcaseIcon,
@@ -40,6 +41,8 @@ function Chip({ label, tone = 'slate' }) {
 export default function PortfolioPage() {
   const { profile } = useAuth();
   const toast = useToast();
+  const { access } = useAccess();
+  const passLocked = access ? !access.active : false; // Phase 4 export gate
   const [internship, setInternship] = useState(null);
   const [snapshots, setSnapshots] = useState(null);
   const [evaluations, setEvaluations] = useState([]);
@@ -255,11 +258,17 @@ export default function PortfolioPage() {
                   </button>
                   <button
                     onClick={downloadPdf}
-                    className="inline-flex items-center justify-center gap-1.5 bg-slate-900 text-white rounded-lg py-2.5 text-sm font-medium hover:bg-slate-700"
+                    disabled={passLocked}
+                    className="inline-flex items-center justify-center gap-1.5 bg-slate-900 text-white rounded-lg py-2.5 text-sm font-medium hover:bg-slate-700 disabled:opacity-40"
                   >
                     <DocumentArrowDownIcon className="w-4 h-4" /> Portfolio PDF
                   </button>
                 </div>
+                {passLocked && (
+                  <p className="text-xs text-amber-700 text-center">
+                    Exports need an internship pass — activate one in Profile.
+                  </p>
+                )}
                 {verification && (
                   <p className="text-xs text-gray-400 text-center">
                     The PDF footer carries Verification ID {verification.verification_id} + QR —

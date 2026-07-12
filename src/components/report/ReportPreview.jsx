@@ -10,6 +10,7 @@
  */
 
 import { accentCss } from '../../services/render/reportLayout';
+import { fieldRows as buildFieldRows } from '../../services/render/fieldRows';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 
 const RUBRIC_LABELS = {
@@ -23,16 +24,11 @@ const RUBRIC_LABELS = {
 };
 
 function fieldRows(data, template) {
-  const rows = [];
-  (template?.fields_schema?.sections ?? []).forEach((section) => {
-    (section.fields ?? []).forEach((f) => {
-      const v = data?.[`${section.section_id}.${f.field_id}`];
-      if (v !== undefined && v !== null && String(v).trim() !== '') {
-        rows.push({ label: f.field_name, value: String(v), section: section.section_name });
-      }
-    });
-  });
-  return rows;
+  return buildFieldRows(data, template).map((r) => ({
+    label: r.field_name,
+    lines: r.lines,
+    section: r.section_name,
+  }));
 }
 
 export default function ReportPreview({ model, layout, label = 'Preview', onClose }) {
@@ -109,9 +105,18 @@ export default function ReportPreview({ model, layout, label = 'Preview', onClos
                         {showSection && (
                           <p className="text-[10px] font-bold uppercase tracking-wide text-gray-400 mt-2">{r.section}</p>
                         )}
-                        <p className="text-sm text-gray-800">
-                          <span className="text-gray-500">{r.label}:</span> {r.value}
-                        </p>
+                        {r.lines.length > 1 ? (
+                          <div className="text-sm text-gray-800">
+                            <span className="text-gray-500">{r.label}:</span>
+                            <ul className="list-disc list-inside ml-1 mt-0.5">
+                              {r.lines.map((line, li) => <li key={li}>{line}</li>)}
+                            </ul>
+                          </div>
+                        ) : (
+                          <p className="text-sm text-gray-800">
+                            <span className="text-gray-500">{r.label}:</span> {r.lines[0]}
+                          </p>
+                        )}
                       </div>
                     );
                   })}

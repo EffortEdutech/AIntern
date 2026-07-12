@@ -14,6 +14,7 @@ import {
   HeadingLevel, WidthType, ImageRun, AlignmentType, BorderStyle,
 } from 'docx';
 import { LAYOUT_DEFAULTS } from '../render/reportLayout';
+import { fieldRows as buildFieldRows } from '../render/fieldRows';
 
 const rgbHex = ([r, g, b]) =>
   [r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('').toUpperCase();
@@ -26,17 +27,14 @@ function b64ToUint8(dataUrl) {
   return arr;
 }
 
+// List-type fields keep their lines as an array here (rather than joining
+// to a string) so kvTable() below can render each as its own paragraph —
+// Word bullets read better as separate paragraphs than \n-joined text.
 function fieldRows(data, template) {
-  const rows = [];
-  (template?.fields_schema?.sections ?? []).forEach((section) => {
-    (section.fields ?? []).forEach((f) => {
-      const v = data?.[`${section.section_id}.${f.field_id}`];
-      if (v !== undefined && v !== null && String(v).trim() !== '') {
-        rows.push([f.field_name, String(v)]);
-      }
-    });
-  });
-  return rows;
+  return buildFieldRows(data, template).map(({ field_name, lines }) => [
+    field_name,
+    lines.length > 1 ? lines : lines[0],
+  ]);
 }
 
 const cellBorders = {
@@ -59,7 +57,11 @@ function kvTable(rows, boldColWidth = 32) {
         }),
         new TableCell({
           borders: cellBorders,
-          children: [new Paragraph({ children: [new TextRun({ text: String(v), size: 18 })] })],
+          // Array value (list-type field, e.g. bulleted daily activities):
+          // one paragraph per bullet. Everything else: unchanged single line.
+          children: Array.isArray(v)
+            ? v.map((line) => new Paragraph({ children: [new TextRun({ text: `• ${line}`, size: 18 })] }))
+            : [new Paragraph({ children: [new TextRun({ text: String(v), size: 18 })] })],
         }),
       ],
     })),

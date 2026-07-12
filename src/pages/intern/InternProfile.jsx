@@ -14,10 +14,12 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { internshipService } from '../../services/api/internshipService';
+import { dailyLogService, DAILY_TEMPLATE_ID_V2 } from '../../services/api/dailyLogService';
 import { aiService } from '../../services/api/aiService';
 import { PLATFORM } from '../../config/platform';
 import { ACCENT_CHOICES, LAYOUT_DEFAULTS } from '../../services/render/reportLayout';
 import InternShell from '../../components/layout/InternShell';
+import PassSection from '../../components/pass/PassSection';
 
 const AI_PROVIDERS = [
   { value: 'openai', label: 'OpenAI' },
@@ -45,6 +47,13 @@ export default function InternProfile() {
   const [prefs, setPrefs] = useState({});
   const [prefsSaving, setPrefsSaving] = useState(false);
 
+  // Daily log fields (Phase A.2): per-field visibility + multi-task opt-in
+  const [dailyTemplate, setDailyTemplate] = useState(null);
+  const [hiddenFields, setHiddenFields] = useState([]);
+  const [v2TemplateId, setV2TemplateId] = useState(null);
+  const [fieldPrefsSaving, setFieldPrefsSaving] = useState(false);
+  const [multiTaskSaving, setMultiTaskSaving] = useState(false);
+
   // AI BYOK state
   const [aiProvider, setAiProvider] = useState('openai');
   const [aiKey, setAiKey] = useState('');
@@ -62,6 +71,14 @@ export default function InternProfile() {
     }
   }, [profile]);
 
+  // Phase A.2: reload the ACTIVE template (whichever one is currently
+  // assigned) so the visibility toggle list and the multi-task switch
+  // always reflect what /log is actually using right now.
+  const loadDailyTemplate = async (itn) => {
+    const tpl = await dailyLogService.getDailyTemplate(itn);
+    if (tpl.success) setDailyTemplate(tpl.data);
+  };
+
   useEffect(() => {
     internshipService.getMyInternship().then(({ data }) => {
       setInternship(data);
@@ -71,12 +88,56 @@ export default function InternProfile() {
           supervisor_email: data.supervisor_email || '',
         });
         setPrefs(data.metadata?.report_prefs ?? {});
+        setHiddenFields(data.metadata?.field_prefs?.hidden ?? []);
+        loadDailyTemplate(data);
       }
+    });
+    dailyLogService.getTemplateByKey(DAILY_TEMPLATE_ID_V2).then((tpl) => {
+      if (tpl) setV2TemplateId(tpl.id);
     });
     aiService.listKeys().then((res) => {
       if (res.success) setSavedKeys(res.keys ?? []);
     });
   }, []);
+
+  const toggleFieldVisibility = async (path) => {
+    if (!internship) return;
+    const next = hiddenFields.includes(path)
+      ? hiddenFields.filter((p) => p !== path)
+      : [...hiddenFields, path];
+    setHiddenFields(next);
+    setFieldPrefsSaving(true);
+    const res = await internshipService.updateInternship(internship.id, {
+      metadata: { ...(internship.metadata ?? {}), field_prefs: { hidden: next } },
+    });
+    setFieldPrefsSaving(false);
+    if (res.success) {
+      setInternship(res.data);
+    } else {
+      setHiddenFields(hiddenFields); // revert
+      toast.error(res.error);
+    }
+  };
+
+  const usingCustomTemplate = Boolean(
+    internship?.daily_template_id && internship.daily_template_id !== v2TemplateId
+  );
+  const usingMultiTask = Boolean(v2TemplateId && internship?.daily_template_id === v2TemplateId);
+
+  const toggleMultiTask = async () => {
+    if (!internship || !v2TemplateId) return;
+    const nextId = usingMultiTask ? null : v2TemplateId;
+    setMultiTaskSaving(true);
+    const res = await internshipService.updateInternship(internship.id, { daily_template_id: nextId });
+    setMultiTaskSaving(false);
+    if (res.success) {
+      setInternship(res.data);
+      await loadDailyTemplate(res.data);
+      toast.success(nextId ? 'Multiple tasks per day enabled.' : 'Back to one task per day.');
+    } else {
+      toast.error(res.error);
+    }
+  };
 
   const set = (key) => (e) => setFields((f) => ({ ...f, [key]: e.target.value }));
 
@@ -186,6 +247,9 @@ export default function InternProfile() {
             {saving ? 'Saving…' : 'Save details'}
           </button>
         </section>
+
+        {/* Internship pass (Phase 4 S13) */}
+        <PassSection />
 
         {/* Review settings */}
         {internship && (
@@ -310,13 +374,15 @@ export default function InternProfile() {
           </section>
         )}
 
-        {/* Logbook format (Session 11) */}
+        {/* Logbook format (Session 11 + Phase A.2 multi-task opt-in) */}
         <section className="bg-white rounded-xl border border-gray-200 p-5 space-y-2">
           <h2 className="font-semibold text-gray-900">Logbook format</h2>
           <p className="text-xs text-gray-500">
-            {internship?.daily_template_id
+            {usingCustomTemplate
               ? 'Using a custom format imported from your institution\'s form.'
-              : 'Using the default AIntern daily log format.'}
+              : usingMultiTask
+                ? 'Using the default AIntern daily log format (multiple tasks per day).'
+                : 'Using the default AIntern daily log format.'}
           </p>
           <Link
             to="/template-studio"
@@ -324,7 +390,68 @@ export default function InternProfile() {
           >
             ✨ Open Template Studio
           </Link>
+          {!usingCustomTemplate && v2TemplateId && (
+            <label className="flex items-start gap-2 text-sm text-gray-700 pt-2">
+              <input
+                type="checkbox"
+                checked={usingMultiTask}
+                disabled={multiTaskSaving}
+                onChange={toggleMultiTask}
+                className="h-4 w-4 rounded border-gray-300 mt-0.5"
+              />
+              <span>
+                Allow multiple tasks per day (add a category + description for each task you worked on)
+                <span className="block text-xs text-gray-400 mt-0.5">
+                  Only applies to new logs — entries you've already approved keep showing exactly as they were.
+                </span>
+              </span>
+            </label>
+          )}
         </section>
+
+        {/* Daily log fields (Phase A.2) */}
+        {internship && dailyTemplate && (
+          <section className="bg-white rounded-xl border border-gray-200 p-5 space-y-3">
+            <h2 className="font-semibold text-gray-900">Daily log fields</h2>
+            <p className="text-xs text-gray-500">
+              Choose what shows up on your daily log page. Everything is shown by default.
+            </p>
+            <div className="space-y-3">
+              {dailyTemplate.fields_schema.sections.map((section) => (
+                <div key={section.section_id}>
+                  <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-1">
+                    {section.section_name}
+                  </p>
+                  <div className="space-y-1">
+                    {section.fields.map((f) => {
+                      const path = `${section.section_id}.${f.field_id}`;
+                      const isHidden = hiddenFields.includes(path);
+                      return (
+                        <label
+                          key={path}
+                          className="flex items-center justify-between gap-2 text-sm text-gray-700 py-0.5"
+                        >
+                          <span>
+                            {f.field_name}
+                            {f.required && <span className="text-red-400"> *</span>}
+                          </span>
+                          <input
+                            type="checkbox"
+                            checked={!isHidden}
+                            disabled={fieldPrefsSaving}
+                            onChange={() => toggleFieldVisibility(path)}
+                            className="h-4 w-4 rounded border-gray-300"
+                          />
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+            {fieldPrefsSaving && <p className="text-xs text-gray-400">Saving…</p>}
+          </section>
+        )}
 
         {/* AI Assistant (BYOK) */}
         <section className="bg-white rounded-xl border border-gray-200 p-5 space-y-3">

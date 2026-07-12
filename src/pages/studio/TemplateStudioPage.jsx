@@ -21,9 +21,9 @@ import { useToast } from '../../context/ToastContext';
 import { CameraIcon, SparklesIcon } from '@heroicons/react/24/outline';
 
 const PROVIDERS = [
-  { value: 'gemini', label: 'Gemini (photo + PDF)' },
-  { value: 'anthropic', label: 'Claude (photo + PDF)' },
-  { value: 'openai', label: 'OpenAI (photo only)' },
+  { value: 'gemini', label: 'Gemini (photo + any PDF)' },
+  { value: 'anthropic', label: 'Claude (photo + any PDF)' },
+  { value: 'openai', label: 'OpenAI (photo + text-based PDF)' },
 ];
 
 export default function TemplateStudioPage() {
@@ -50,7 +50,8 @@ export default function TemplateStudioPage() {
     setExtracting(false);
     if (res.success) {
       setDraft(res.template);
-      toast.success(`Form structure extracted (${res.tier === 'byok' ? 'your key' : 'built-in AI'}).`);
+      const via = res.extraction === 'text' ? 'read as text' : 'read as image';
+      toast.success(`Form structure extracted (${res.tier === 'byok' ? 'your key' : 'built-in AI'}, ${via}).`);
     } else {
       toast.error(res.error);
     }

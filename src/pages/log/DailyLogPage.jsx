@@ -23,6 +23,7 @@ import { internshipService } from '../../services/api/internshipService';
 import { aiService } from '../../services/api/aiService';
 import { useToast } from '../../context/ToastContext';
 import { useOffline } from '../../hooks/useOffline';
+import { applyFieldVisibility } from '../../utils/fieldVisibility';
 
 function todayStr() {
   return new Date().toISOString().split('T')[0];
@@ -72,7 +73,8 @@ export default function DailyLogPage() {
         return;
       }
       if (tpl.success) {
-        setTemplate(tpl.data);
+        // Profile-configurable field visibility (default: everything shown)
+        setTemplate(applyFieldVisibility(tpl.data, itn));
         setFromCache(tpl.fromCache);
       } else {
         setLoadError(tpl.error);

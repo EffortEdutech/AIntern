@@ -14,6 +14,7 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { LAYOUT_DEFAULTS } from '../render/reportLayout';
 import { qrPngDataUrl } from '../render/qr';
+import { fieldRows as buildFieldRows } from '../render/fieldRows';
 
 const M = 18;
 const W = 210 - M * 2;
@@ -36,17 +37,14 @@ function ensureSpace(doc, y, needed) {
   return y;
 }
 
+// Bulleted (list-type) fields get one "• line" per row, joined with \n —
+// jspdf-autotable wraps cell text as-is and honors explicit line breaks.
+// Single-value fields render exactly as before (no bullet).
 function fieldRows(data, template) {
-  const rows = [];
-  (template?.fields_schema?.sections ?? []).forEach((section) => {
-    (section.fields ?? []).forEach((f) => {
-      const v = data?.[`${section.section_id}.${f.field_id}`];
-      if (v !== undefined && v !== null && String(v).trim() !== '') {
-        rows.push([f.field_name, String(v)]);
-      }
-    });
-  });
-  return rows;
+  return buildFieldRows(data, template).map(({ field_name, lines }) => [
+    field_name,
+    lines.length > 1 ? lines.map((l) => `• ${l}`).join('\n') : lines[0],
+  ]);
 }
 
 export function generateLogbookPdf({ profile, internship, snapshots, evaluations, template, layout = null, verification = null }) {

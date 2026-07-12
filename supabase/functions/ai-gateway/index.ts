@@ -15,6 +15,7 @@
  *   delete_key  { provider }
  *   list_keys   {}                            → providers with stored keys
  *   generate    { feature, text, hints? , provider? }
+ *   import_form { mime, file_base64, provider? }  → template draft (Template Studio)
  *
  * Required secrets (Dashboard → Edge Functions → Secrets):
  *   AINTERN_KEY_ENCRYPTION_SECRET  — long random string (BYOK crypto)
@@ -26,9 +27,15 @@
  * @file supabase/functions/ai-gateway/index.ts
  * @created July 9, 2026 - Session 3
  * @updated July 11, 2026 - v6: portfolio (R5) + ready_check (R1.5) features
+ * @updated July 12, 2026 - v8: import_form tries PDF text-extraction first
+ *   (npm:unpdf), falling back to vision only for scanned/photographed PDFs —
+ *   text-layer PDFs now work with ANY provider, not just Gemini/Claude.
+ *   New "list" field_type (point-form entries, e.g. daily activities) in
+ *   the extraction schema + sanitizer. (Phase A, PDF-import planning doc.)
  */
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { extractText, getDocumentProxy } from 'npm:unpdf';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -224,20 +231,36 @@ const PROVIDERS: Record<string, typeof callOpenAI> = {
 
 // ─── Template import (Session 11): prompt, vision calls, sanitizer ───────
 
-const IMPORT_PROMPT = [
-  'You are analyzing a scanned or photographed internship logbook / daily report form.',
+// Shared JSON schema instructions for both the vision path (image/scanned
+// PDF) and the text path (extracted PDF text layer) — only the framing
+// sentence differs between the two prompts below.
+const IMPORT_SCHEMA_SPEC = [
   'Extract its structure as STRICT JSON (no markdown fences, no commentary):',
   '{"template_name": string, "sections": [{"section_id": snake_case string, "section_name": string,',
   '"fields": [{"field_id": snake_case string, "field_name": string,',
-  '"field_type": one of "text"|"textarea"|"number"|"date"|"time"|"select"|"radio"|"checkbox",',
+  '"field_type": one of "text"|"textarea"|"list"|"number"|"date"|"time"|"select"|"radio"|"checkbox",',
   '"required": boolean, "options": string[] (only for select/radio), "rows": number (only for textarea)}]}]}.',
-  'Rules: long writing areas are "textarea"; date fields "date"; time fields "time"; rating scales or',
-  'checklists with fixed choices are "select" or "radio" with their options; signature areas, logos,',
-  'page headers/footers, and approval stamps are NOT fields - skip them.',
+  'Rules: a writing area meant for ONE continuous narrative is "textarea"; a writing area meant to capture',
+  'SEVERAL distinct short items for a single entry (numbered lines, bullet points, or multiple short',
+  'sentences each describing a separate task/activity, e.g. a daily "Activity" column) is "list", not',
+  '"textarea"; date fields "date"; time fields "time"; rating scales or checklists with fixed choices are',
+  '"select" or "radio" with their options; signature areas, logos, page headers/footers, and approval',
+  'stamps are NOT fields - skip them. If the document is a FILLED example rather than a blank form, infer',
+  'the general structure it implies and ignore the specific dates/names/activities actually filled in.',
   'Keep the original language of the form labels. Maximum 8 sections, 15 fields per section.',
 ].join(' ');
 
-const ALLOWED_FIELD_TYPES = new Set(['text', 'textarea', 'number', 'date', 'time', 'select', 'radio', 'checkbox']);
+const IMPORT_PROMPT = [
+  'You are analyzing a scanned or photographed internship logbook / daily report form.',
+  IMPORT_SCHEMA_SPEC,
+].join(' ');
+
+const IMPORT_PROMPT_TEXT = [
+  'You are analyzing text extracted from an internship logbook / daily report document.',
+  IMPORT_SCHEMA_SPEC,
+].join(' ');
+
+const ALLOWED_FIELD_TYPES = new Set(['text', 'textarea', 'list', 'number', 'date', 'time', 'select', 'radio', 'checkbox']);
 
 function slug(input: string, fallback: string): string {
   const s = String(input ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40);
@@ -375,7 +398,46 @@ const VISION_PROVIDERS: Record<string, typeof visionOpenAI> = {
   gemini: visionGemini,
 };
 
-// ─── Metering ─────────────────────────────────────────────────────────────
+// ─── PDF text extraction (text-first path, vision fallback) ──────────────
+
+function b64ToBytes(b64: string): Uint8Array {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
+/**
+ * Pull the text layer out of a PDF (native/exported PDFs — Word/Docs
+ * exports, digitally filled forms). Works with ANY provider since it's a
+ * plain text call, not vision — no OpenAI-can't-do-PDF restriction.
+ * Returns '' for scanned/photographed PDFs with no embedded text, which
+ * signals the caller to fall back to the vision path.
+ */
+async function extractPdfText(b64: string): Promise<string> {
+  try {
+    const pdf = await getDocumentProxy(b64ToBytes(b64));
+    const { text } = await extractText(pdf, { mergePages: true });
+    return String(text ?? '').trim();
+  } catch (err) {
+    console.error('PDF text extraction failed, falling back to vision:', err);
+    return '';
+  }
+}
+
+// ─── Metering & entitlements ──────────────────────────────────────────────
+
+/** Phase 4: bundled AI is part of the internship pass (trial = BYOK only). */
+async function hasActivePass(userId: string): Promise<boolean> {
+  const { data } = await admin
+    .from('entitlements')
+    .select('id')
+    .eq('user_id', userId)
+    .gt('expires_at', new Date().toISOString())
+    .limit(1)
+    .maybeSingle();
+  return Boolean(data);
+}
 
 async function monthlyUsage(userId: string): Promise<number> {
   const monthStart = new Date();
@@ -482,11 +544,18 @@ Deno.serve(async (req) => {
         provider = cred.provider;
         key = await decrypt(cred.encrypted_key);
       } else {
-        // Bundled tier — platform OpenAI key, capped
+        // Bundled tier — platform OpenAI key, capped, pass-holders only (Phase 4)
         if (!PLATFORM_OPENAI_KEY) {
           return json({
             success: false,
             error: 'No AI key available. Add your own key in Profile → AI Assistant, or upgrade to the bundled AI plan.',
+          }, 402);
+        }
+        if (!(await hasActivePass(user.id))) {
+          return json({
+            success: false,
+            error: 'Bundled AI comes with the internship pass — activate a pass, or add your own key in Profile → AI Assistant.',
+            code: 'PASS_REQUIRED',
           }, 402);
         }
         const used = await monthlyUsage(user.id);
@@ -556,6 +625,13 @@ Deno.serve(async (req) => {
         if (!PLATFORM_OPENAI_KEY) {
           return json({ success: false, error: 'No AI key available. Add your own key in Profile → AI Assistant.' }, 402);
         }
+        if (!(await hasActivePass(user.id))) {
+          return json({
+            success: false,
+            error: 'Bundled AI comes with the internship pass — activate a pass, or add your own key in Profile → AI Assistant.',
+            code: 'PASS_REQUIRED',
+          }, 402);
+        }
         const used = await monthlyUsage(user.id);
         if (used >= MONTHLY_CAP) {
           return json({ success: false, error: `Monthly AI quota reached (${MONTHLY_CAP} tokens).` }, 429);
@@ -565,14 +641,29 @@ Deno.serve(async (req) => {
         key = PLATFORM_OPENAI_KEY;
       }
 
-      if (mime === 'application/pdf' && provider === 'openai') {
-        return json({
-          success: false,
-          error: 'PDF import needs a Gemini or Claude key (Profile → AI Assistant) — or upload a photo/screenshot of the form instead.',
-        }, 400);
+      // Text-first: a native/exported PDF (Word/Docs export, digitally
+      // filled form) has a text layer we can read directly — cheaper, more
+      // accurate on long documents, and works with ANY provider (no vision
+      // needed). Only fall back to vision for scanned/photographed PDFs.
+      let result: AiResult;
+      let extraction: 'text' | 'vision' = 'vision';
+      if (mime === 'application/pdf') {
+        const extracted = await extractPdfText(b64);
+        if (extracted.length > 200) {
+          extraction = 'text';
+          result = await PROVIDERS[provider](key, IMPORT_PROMPT_TEXT, extracted.slice(0, 12000), 4000);
+        } else if (provider === 'openai') {
+          return json({
+            success: false,
+            error: 'This PDF looks scanned (no selectable text) and needs a Gemini or Claude key to read as an image — or upload a photo/screenshot of the form instead.',
+          }, 400);
+        } else {
+          result = await VISION_PROVIDERS[provider](key, IMPORT_PROMPT, mime, b64, 4000);
+        }
+      } else {
+        result = await VISION_PROVIDERS[provider](key, IMPORT_PROMPT, mime, b64, 4000);
       }
 
-      const result = await VISION_PROVIDERS[provider](key, IMPORT_PROMPT, mime, b64, 4000);
       if (tier === 'bundled') {
         await admin.from('ai_usage').insert({
           user_id: user.id,
@@ -588,11 +679,11 @@ Deno.serve(async (req) => {
       if (!sanitized) {
         return json({
           success: false,
-          error: 'Could not read a form structure from that file. Try a clearer photo (whole page, good lighting).',
+          error: 'Could not read a form structure from that file. Try a clearer photo (whole page, good lighting) or a shorter excerpt.',
         }, 422);
       }
 
-      return json({ success: true, template: sanitized, tier: tier, provider: provider });
+      return json({ success: true, template: sanitized, tier: tier, provider: provider, extraction });
     }
 
     return json({ success: false, error: 'Unknown action' }, 400);

@@ -13,6 +13,10 @@ import { supabase } from '../supabase/client';
 import { internDb } from '../offline/internDb';
 
 export const DAILY_TEMPLATE_ID = 'aintern-daily-log-v1';
+// Phase A.2: opt-in variant with repeatable Tasks Performed entries. Never
+// mutate v1 in place (its field paths are frozen into historical evidence
+// and already-official report versions) — v2 is a separate, additive row.
+export const DAILY_TEMPLATE_ID_V2 = 'aintern-daily-log-v2';
 
 function todayStr() {
   return new Date().toISOString().split('T')[0];
@@ -63,6 +67,22 @@ class DailyLogService {
         error: 'Template unavailable offline. Open the app once while online to cache it.'
       };
     }
+  }
+
+  /**
+   * Look up a public template row by its template_id — used by Profile to
+   * (a) list the ACTIVE template's fields for the visibility toggles, and
+   * (b) resolve the "aintern-daily-log-v2" repeater-tasks variant's id for
+   * the "Allow multiple tasks per day" opt-in (Phase A.2).
+   */
+  async getTemplateByKey(templateId) {
+    const { data, error } = await supabase
+      .from('templates')
+      .select('*')
+      .eq('template_id', templateId)
+      .maybeSingle();
+    if (error || !data) return null;
+    return data;
   }
 
   /**

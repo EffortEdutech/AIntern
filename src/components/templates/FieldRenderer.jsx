@@ -25,6 +25,8 @@ import SignatureCanvas from '../attachments/SignatureCanvas';
  * - number, date, datetime, month, time
  * - select, radio, checkbox
  * - textarea
+ * - list ✅ (AINTERN Phase A - point-form entries, e.g. daily activities)
+ * - repeater ✅ (AINTERN Phase A.2 - repeated groups, e.g. multiple tasks/day)
  * - photo ✅ (Session 15)
  * - signature ✅ (Session 15)
  * - calculated
@@ -90,6 +92,10 @@ export function FieldRenderer({
         return []; // Array of attachment IDs
       case 'signature':
         return null; // Single attachment ID
+      case 'list':
+        return []; // Array of point-form strings (AINTERN addition)
+      case 'repeater':
+        return []; // Array of item objects, e.g. [{task_category, task_summary}]
       default:
         return '';
     }
@@ -305,6 +311,33 @@ export function FieldRenderer({
         />
       );
 
+    case 'list':
+      // AINTERN ADDITION (Phase A - PDF-import Case 1): point-form entries
+      // (e.g. daily activities) instead of one freeform paragraph.
+      return (
+        <AinternListField
+          fieldPath={fieldPath}
+          field={field}
+          fieldValue={Array.isArray(fieldValue) ? fieldValue : []}
+          onChange={onChange}
+          error={error}
+        />
+      );
+
+    case 'repeater':
+      // AINTERN ADDITION (Phase A.2): repeated groups of sub-fields (e.g.
+      // Task category + description) — for days with multiple distinct
+      // tasks/categories.
+      return (
+        <AinternRepeaterField
+          fieldPath={fieldPath}
+          field={field}
+          fieldValue={Array.isArray(fieldValue) ? fieldValue : []}
+          onChange={onChange}
+          error={error}
+        />
+      );
+
     case 'photo':
       // Photo upload component (Session 15)
       if (!workEntryId) {
@@ -446,6 +479,239 @@ function AinternPolishableTextarea({ fieldPath, field, fieldValue, handleChange,
           {polishError && <span className="text-xs text-red-600">{polishError}</span>}
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── AINTERN ADDITION (Phase A - PDF-import Case 1) ─────────────────────
+// "list" field type: point-form entries (e.g. daily activities) instead of
+// one freeform paragraph. Each row is its own short input with an optional
+// ✨ Polish button, scoped to that single row's text — polishing the whole
+// list at once risks the model merging or reordering distinct activities.
+function AinternListField({ fieldPath, field, fieldValue, onChange, error }) {
+  const ai = useContext(AiPolishContext);
+  const [busyIndex, setBusyIndex] = useState(null);
+  const [rowErrors, setRowErrors] = useState({});
+
+  // Render at least one (possibly blank) row so there's always somewhere
+  // to type; the underlying value only gains an entry once the user
+  // actually types something (DynamicForm's required check treats an
+  // all-blank array the same as an empty one).
+  const items = fieldValue.length > 0 ? fieldValue : [''];
+
+  const updateRow = (i, text) => {
+    const next = [...items];
+    next[i] = text;
+    onChange(fieldPath, next);
+  };
+
+  const addRow = () => onChange(fieldPath, [...items, '']);
+
+  const removeRow = (i) => {
+    const next = items.filter((_, idx) => idx !== i);
+    onChange(fieldPath, next.length > 0 ? next : []);
+  };
+
+  const polishRow = async (i) => {
+    if (!ai?.polish || !items[i]?.trim()) return;
+    setBusyIndex(i);
+    setRowErrors((e) => ({ ...e, [i]: null }));
+    const res = await ai.polish(items[i]);
+    setBusyIndex(null);
+    if (res?.success && res.text) {
+      updateRow(i, res.text.trim());
+    } else {
+      setRowErrors((e) => ({ ...e, [i]: res?.error || 'Polish failed' }));
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      {items.map((item, i) => (
+        <div key={i} className="space-y-1">
+          <div className="flex items-start gap-1.5">
+            <span className="text-gray-400 mt-2.5 select-none">•</span>
+            <textarea
+              name={`${fieldPath}.${i}`}
+              value={item}
+              onChange={(e) => updateRow(i, e.target.value)}
+              placeholder={field.placeholder || 'Add a point...'}
+              rows={1}
+              disabled={field.read_only || busyIndex === i}
+              className={`flex-1 px-3 py-2 border rounded-md focus:ring-primary-500 focus:border-primary-500 resize-y ${
+                error ? 'border-red-500' : 'border-gray-300'
+              } ${busyIndex === i ? 'opacity-60' : ''}`}
+            />
+            {!field.read_only && items.length > 1 && (
+              <button
+                type="button"
+                onClick={() => removeRow(i)}
+                aria-label="Remove point"
+                className="mt-1.5 text-gray-400 hover:text-red-500 px-1"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+          {ai?.polish && !field.read_only && (
+            <div className="flex items-center gap-2 pl-5">
+              <button
+                type="button"
+                onClick={() => polishRow(i)}
+                disabled={busyIndex === i || !item?.trim()}
+                className="text-xs font-medium px-2 py-0.5 rounded-md border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {busyIndex === i ? 'Polishing…' : '✨ Polish'}
+              </button>
+              {rowErrors[i] && <span className="text-xs text-red-600">{rowErrors[i]}</span>}
+            </div>
+          )}
+        </div>
+      ))}
+      {!field.read_only && (
+        <button
+          type="button"
+          onClick={addRow}
+          className="text-xs font-medium px-2 py-1 rounded-md border border-dashed border-gray-300 text-gray-500 hover:bg-gray-50"
+        >
+          + Add point
+        </button>
+      )}
+      {error && <p className="text-sm text-red-600">{error}</p>}
+    </div>
+  );
+}
+
+// ─── AINTERN ADDITION (Phase A.2 - repeatable Tasks Performed) ──────────
+// "repeater" field type: N repeated groups of sub-fields (item_fields),
+// added/removed with a button — for days with multiple distinct tasks or
+// categories. Each item is a plain object keyed by the item_fields'
+// field_id (these live inside one array value, not as their own top-level
+// section.field path). Kept intentionally minimal — only "select" and
+// "textarea" sub-fields are supported today (that's all Tasks Performed
+// needs); it does not recurse through the full FieldRenderer switch.
+// Per-item required flags are informational only: the only thing actually
+// enforced is the repeater field itself being non-blank overall (see
+// DynamicForm's isBlankArray check), so submission isn't blocked on a
+// half-filled task the intern is still typing.
+function AinternRepeaterField({ fieldPath, field, fieldValue, onChange, error }) {
+  const ai = useContext(AiPolishContext);
+  const itemFields = field.item_fields ?? [];
+  const items = fieldValue.length > 0 ? fieldValue : [{}];
+  const [busyKey, setBusyKey] = useState(null); // `${itemIndex}.${sub field_id}`
+  const [rowErrors, setRowErrors] = useState({});
+
+  const updateItem = (i, subFieldId, val) => {
+    const next = items.map((it, idx) => (idx === i ? { ...it, [subFieldId]: val } : it));
+    onChange(fieldPath, next);
+  };
+
+  const addItem = () => onChange(fieldPath, [...items, {}]);
+
+  const removeItem = (i) => onChange(fieldPath, items.filter((_, idx) => idx !== i));
+
+  const polishSubField = async (i, subFieldId) => {
+    const key = `${i}.${subFieldId}`;
+    const text = items[i]?.[subFieldId];
+    if (!ai?.polish || !text?.trim()) return;
+    setBusyKey(key);
+    setRowErrors((e) => ({ ...e, [key]: null }));
+    const res = await ai.polish(text);
+    setBusyKey(null);
+    if (res?.success && res.text) {
+      updateItem(i, subFieldId, res.text.trim());
+    } else {
+      setRowErrors((e) => ({ ...e, [key]: res?.error || 'Polish failed' }));
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      {items.map((item, i) => (
+        <div key={i} className="border border-gray-200 rounded-lg p-3 space-y-2 bg-gray-50/60">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">
+              Task {i + 1}
+            </span>
+            {!field.read_only && items.length > 1 && (
+              <button
+                type="button"
+                onClick={() => removeItem(i)}
+                className="text-xs text-gray-400 hover:text-red-500"
+              >
+                ✕ Remove
+              </button>
+            )}
+          </div>
+
+          {itemFields.map((sf) => {
+            const key = `${i}.${sf.field_id}`;
+            const val = item[sf.field_id] ?? '';
+
+            if (sf.field_type === 'select') {
+              return (
+                <div key={sf.field_id}>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    {sf.field_name}{sf.required && <span className="text-red-500"> *</span>}
+                  </label>
+                  <select
+                    value={val}
+                    onChange={(e) => updateItem(i, sf.field_id, e.target.value)}
+                    disabled={field.read_only}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-primary-500 focus:border-primary-500 bg-white"
+                  >
+                    <option value="">{sf.placeholder || `Select ${sf.field_name}...`}</option>
+                    {(sf.options ?? []).map((opt) => (
+                      <option key={opt} value={opt}>{opt}</option>
+                    ))}
+                  </select>
+                </div>
+              );
+            }
+
+            // textarea (the only other sub-field kind Tasks Performed needs)
+            return (
+              <div key={sf.field_id}>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  {sf.field_name}{sf.required && <span className="text-red-500"> *</span>}
+                </label>
+                <textarea
+                  value={val}
+                  onChange={(e) => updateItem(i, sf.field_id, e.target.value)}
+                  placeholder={sf.placeholder || ''}
+                  rows={sf.rows || 3}
+                  disabled={field.read_only || busyKey === key}
+                  className={`w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-primary-500 focus:border-primary-500 ${busyKey === key ? 'opacity-60' : ''}`}
+                />
+                {ai?.polish && !field.read_only && (
+                  <div className="flex items-center gap-2 mt-1">
+                    <button
+                      type="button"
+                      onClick={() => polishSubField(i, sf.field_id)}
+                      disabled={busyKey === key || !val?.trim()}
+                      className="text-xs font-medium px-2 py-1 rounded-md border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      {busyKey === key ? 'Polishing…' : '✨ Polish with AI'}
+                    </button>
+                    {rowErrors[key] && <span className="text-xs text-red-600">{rowErrors[key]}</span>}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ))}
+
+      {!field.read_only && (
+        <button
+          type="button"
+          onClick={addItem}
+          className="text-xs font-medium px-3 py-1.5 rounded-md border border-dashed border-gray-300 text-gray-500 hover:bg-gray-50"
+        >
+          + Add task
+        </button>
+      )}
+      {error && <p className="text-sm text-red-600">{error}</p>}
     </div>
   );
 }

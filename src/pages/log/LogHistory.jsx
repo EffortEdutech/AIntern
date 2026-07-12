@@ -18,6 +18,7 @@ import { submissionService } from '../../services/api/submissionService';
 import { reviewService } from '../../services/api/reviewService';
 import { useToast } from '../../context/ToastContext';
 import { useOffline } from '../../hooks/useOffline';
+import { useAccess } from '../../hooks/useAccess';
 import { PencilSquareIcon, ArrowUpTrayIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 
 const STATUS_CHIP = {
@@ -42,6 +43,9 @@ export default function LogHistory() {
   const [emailing, setEmailing] = useState(false);
   const toast = useToast();
   const { isOnline } = useOffline();
+  const { access } = useAccess();
+  // Phase 4: reviews need trial-or-pass (server enforces; this is UX).
+  const passLocked = access ? !access.active : false;
 
   const loadDrafts = async () => {
     setDrafts(await dailyLogService.listDrafts());
@@ -277,7 +281,7 @@ export default function LogHistory() {
               <button
                 type="button"
                 onClick={emailSupervisor}
-                disabled={emailing || !isOnline || !internship}
+                disabled={emailing || !isOnline || !internship || passLocked}
                 className="w-full rounded-lg border border-slate-300 text-slate-800 py-2.5 font-medium hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {emailing ? 'Sending…' : '✉️ Email my supervisor a review link'}
@@ -288,11 +292,20 @@ export default function LogHistory() {
               <button
                 type="button"
                 onClick={copyReviewLink}
-                disabled={emailing || !isOnline || !internship}
+                disabled={emailing || !isOnline || !internship || passLocked}
                 className="w-full rounded-lg border border-slate-300 text-slate-800 py-2.5 font-medium hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 🔗 Copy review link (no email)
               </button>
+            )}
+
+            {passLocked && (
+              <p className="text-xs text-amber-700">
+                Your free trial has ended — supervisor reviews need an
+                internship pass.{' '}
+                <Link to="/profile" className="underline font-medium">Activate a pass</Link>.
+                Your drafts stay yours, always.
+              </p>
             )}
 
             {!isOnline && (

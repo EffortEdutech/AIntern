@@ -16,6 +16,8 @@ import { useAuth } from '../../context/AuthContext';
 import { internshipService } from '../../services/api/internshipService';
 import { dailyLogService } from '../../services/api/dailyLogService';
 import { useTerminology } from '../../hooks/useTerminology';
+import { useAccess } from '../../hooks/useAccess';
+import { entitlementService, planLabel } from '../../services/api/entitlementService';
 import InternShell from '../../components/layout/InternShell';
 
 /** Last 7 calendar days, oldest first. */
@@ -41,6 +43,7 @@ export default function InternHome() {
   const [loading, setLoading] = useState(true);
   const [loggedDates, setLoggedDates] = useState(new Set());
   const t = useTerminology(internship?.metadata?.terminology);
+  const { access } = useAccess(); // Phase 4: pass/trial status strip
 
   useEffect(() => {
     let mounted = true;
@@ -78,6 +81,26 @@ export default function InternHome() {
         <p className="text-lg font-semibold text-gray-900">
           Assalamualaikum, {firstName} 👋
         </p>
+
+        {/* ── Pass / trial status (Phase 4 S13) ── */}
+        {access && access.pass && (
+          <Link to="/profile" className="block text-xs px-3 py-2 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800">
+            ✅ {planLabel(access.pass.plan)} active until {String(access.pass.expires_at).slice(0, 10)}
+          </Link>
+        )}
+        {access && !access.pass && access.trial_active && (
+          <Link to="/profile" className="block text-xs px-3 py-2 rounded-lg bg-blue-50 border border-blue-200 text-blue-800">
+            ⏳ Free trial — {entitlementService.daysLeft(access.trial_ends_at)} day
+            {entitlementService.daysLeft(access.trial_ends_at) === 1 ? '' : 's'} left.
+            Tap to see pass options.
+          </Link>
+        )}
+        {access && !access.active && (
+          <Link to="/profile" className="block text-xs px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-amber-800">
+            ⚠️ Trial ended — activate an internship pass to request reviews and
+            export official reports. Your data is always yours.
+          </Link>
+        )}
 
         {!internship ? (
           /* ── No internship yet — onboarding CTA ── */
