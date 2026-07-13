@@ -13,9 +13,14 @@
  * Actions (POST JSON { action, ... }, Authorization: Bearer <user JWT>):
  *   save_key    { provider, api_key }        → encrypt + upsert
  *   delete_key  { provider }
- *   list_keys   {}                            → providers with stored keys
+ *   list_keys   {}                            → providers with stored keys (+ chosen model, if any)
+ *   list_models { provider }                  → LIVE model list from that provider's own API,
+ *                                                using the intern's stored BYOK key (never hardcoded)
+ *   set_model   { provider, model }           → save which model to use for that provider's BYOK key
+ *                                                (model: '' clears back to the built-in default)
  *   generate    { feature, text, hints? , provider? }
  *   import_form { mime, file_base64, provider? }  → template draft (Template Studio)
+ *   import_report_structure { mime, file_base64, provider? }  → chapter list (Final Report, Phase B)
  *
  * Required secrets (Dashboard → Edge Functions → Secrets):
  *   AINTERN_KEY_ENCRYPTION_SECRET  — long random string (BYOK crypto)
@@ -32,6 +37,21 @@
  *   text-layer PDFs now work with ANY provider, not just Gemini/Claude.
  *   New "list" field_type (point-form entries, e.g. daily activities) in
  *   the extraction schema + sanitizer. (Phase A, PDF-import planning doc.)
+ * @updated July 12, 2026 - v9: import_report_structure (full training-report
+ *   → chapter list, Phase B Case 2) + final_chapter_draft feature prompt
+ *   (evidence-only per-chapter draft-assist for the Final Report page).
+ * @updated July 12, 2026 - v10: Gemini model bumped from gemini-2.0-flash
+ *   (shut down by Google 2026-06-01, 404) to gemini-2.5-flash — both text
+ *   and vision Gemini calls now use the shared GEMINI_MODEL constant.
+ * @updated July 12, 2026 - v11: gemini-2.5-flash ALSO turned out to be closed
+ *   to new users within hours of the v10 fix — hardcoding a Gemini version
+ *   string is a losing game. New list_models / set_model actions let each
+ *   intern pick their own model per BYOK provider from that provider's OWN
+ *   live model-list API (never a string baked into this file); the chosen
+ *   model rides along on ai_credentials.model and every call site (generate,
+ *   import_form, import_report_structure) now passes it through instead of
+ *   hardcoding. Bundled tier (no BYOK key) still pins a fixed cheap OpenAI
+ *   model for predictable cost caps — model choice is a BYOK-only feature.
  */
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
@@ -137,6 +157,25 @@ const FEATURES: Record<string, (hints: Record<string, string>) => string> = {
     h.language ? `Write all values in ${h.language}.` : 'Write in the same language as the logs.',
   ].filter(Boolean).join(' '),
 
+  // Phase B — final training report (Case 2): draft ONE narrative chapter
+  // strictly from the intern's own evidence digest (same guardrail as
+  // portfolio/eval_comment). The deterministic verification rule in
+  // create_report_snapshot() never depends on this text.
+  final_chapter_draft: (h) => [
+    'You are helping an intern draft ONE chapter of their final training report,',
+    'based STRICTLY on the provided evidence digest (their own approved daily log',
+    'entries and supervisor evaluations).',
+    h.chapter_title ? `Chapter being drafted: "${h.chapter_title}".` : '',
+    h.guidance ? `Guidance for this chapter: ${h.guidance}` : '',
+    'Write 2-4 short paragraphs grounded ONLY in the evidence provided. Never invent',
+    'tasks, dates, numbers, tools, company facts, or outcomes not present in the',
+    'evidence. If the evidence is thin, write a shorter, honest draft rather than',
+    'padding with invented detail.',
+    h.industry ? `The internship field is: ${h.industry}.` : '',
+    h.language ? `Respond in ${h.language}.` : 'Respond in the same language as the evidence.',
+    'Return ONLY the drafted chapter text - no heading, no preamble, no markdown.',
+  ].filter(Boolean).join(' '),
+
   // v1.1 R1.5 — AI narrative-quality Ready Check (advisory only; the
   // deterministic check in reportVersionService remains the authority).
   ready_check: (h) => [
@@ -155,12 +194,22 @@ const FEATURES: Record<string, (hints: Record<string, string>) => string> = {
 
 type AiResult = { text: string; tokensIn: number; tokensOut: number };
 
-async function callOpenAI(key: string, system: string, user: string, maxTokens: number): Promise<AiResult> {
+// Fallback ONLY for when the intern hasn't picked a model yet (or is on the
+// bundled tier, which pins a fixed model for predictable cost caps — see
+// v11 docstring note above). Never trusted as "the" model — BYOK users pick
+// their own from list_models, which queries each provider's live API.
+const DEFAULT_MODELS: Record<string, string> = {
+  openai: 'gpt-4o-mini',
+  anthropic: 'claude-haiku-4-5-20251001',
+  gemini: 'gemini-3.5-flash',
+};
+
+async function callOpenAI(key: string, system: string, user: string, maxTokens: number, model?: string): Promise<AiResult> {
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
     body: JSON.stringify({
-      model: 'gpt-4o-mini',
+      model: model || DEFAULT_MODELS.openai,
       max_tokens: maxTokens,
       messages: [
         { role: 'system', content: system },
@@ -177,7 +226,7 @@ async function callOpenAI(key: string, system: string, user: string, maxTokens: 
   };
 }
 
-async function callAnthropic(key: string, system: string, user: string, maxTokens: number): Promise<AiResult> {
+async function callAnthropic(key: string, system: string, user: string, maxTokens: number, model?: string): Promise<AiResult> {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -186,7 +235,7 @@ async function callAnthropic(key: string, system: string, user: string, maxToken
       'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify({
-      model: 'claude-haiku-4-5-20251001',
+      model: model || DEFAULT_MODELS.anthropic,
       max_tokens: maxTokens,
       system,
       messages: [{ role: 'user', content: user }],
@@ -201,9 +250,9 @@ async function callAnthropic(key: string, system: string, user: string, maxToken
   };
 }
 
-async function callGemini(key: string, system: string, user: string, maxTokens: number): Promise<AiResult> {
+async function callGemini(key: string, system: string, user: string, maxTokens: number, model?: string): Promise<AiResult> {
   const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${model || DEFAULT_MODELS.gemini}:generateContent?key=${key}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -228,6 +277,51 @@ const PROVIDERS: Record<string, typeof callOpenAI> = {
   anthropic: callAnthropic,
   gemini: callGemini,
 };
+
+/**
+ * Fetch the CURRENT list of usable models straight from the provider's own
+ * API — never hardcoded, so it can't go stale when a provider deprecates a
+ * version (which is exactly what happened twice in one day with Gemini).
+ */
+async function listProviderModels(provider: string, key: string): Promise<{ id: string; label: string }[]> {
+  if (provider === 'openai') {
+    const res = await fetch('https://api.openai.com/v1/models', {
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    if (!res.ok) throw new Error(`OpenAI ${res.status}: ${(await res.text()).slice(0, 200)}`);
+    const data = await res.json();
+    const EXCLUDE = /(embedding|whisper|tts|dall-e|moderation|audio|realtime|transcribe|image|davinci|babbage|ada|curie)/i;
+    return (data.data ?? [])
+      .map((m: Record<string, unknown>) => String(m.id))
+      .filter((id: string) => /^(gpt-|o[0-9]|chatgpt-)/.test(id) && !EXCLUDE.test(id))
+      .sort()
+      .map((id: string) => ({ id, label: id }));
+  }
+  if (provider === 'anthropic') {
+    const res = await fetch('https://api.anthropic.com/v1/models', {
+      headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+    });
+    if (!res.ok) throw new Error(`Anthropic ${res.status}: ${(await res.text()).slice(0, 200)}`);
+    const data = await res.json();
+    return (data.data ?? []).map((m: Record<string, unknown>) => ({
+      id: String(m.id),
+      label: String(m.display_name ?? m.id),
+    }));
+  }
+  if (provider === 'gemini') {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${key}&pageSize=200`);
+    if (!res.ok) throw new Error(`Gemini ${res.status}: ${(await res.text()).slice(0, 200)}`);
+    const data = await res.json();
+    return (data.models ?? [])
+      .filter((m: Record<string, unknown>) => Array.isArray(m.supportedGenerationMethods) && (m.supportedGenerationMethods as string[]).includes('generateContent'))
+      .map((m: Record<string, unknown>) => ({
+        id: String(m.name ?? '').replace(/^models\//, ''),
+        label: String(m.displayName ?? m.name ?? ''),
+      }))
+      .filter((m: { id: string }) => m.id);
+  }
+  throw new Error('Unknown provider');
+}
 
 // ─── Template import (Session 11): prompt, vision calls, sanitizer ───────
 
@@ -311,6 +405,86 @@ function sanitizeTemplate(raw: Record<string, unknown>) {
   };
 }
 
+// ─── Full training-report structure import (Phase B, Case 2) ─────────────
+// Different shape from the daily-log form import above: a long narrative
+// document (chapters/sections), not a fill-in form. Extracts an ORDERED
+// chapter list; classification into narrative vs auto-populated appendix
+// chapters is done, then DOUBLE-CHECKED server-side (the model's "kind"
+// is trusted for the enum value only — whether a chapter is AI-draftable
+// is decided by the sanitizer's own keyword heuristic, never the model,
+// since that flag gates when the evidence-only draft prompt is offered).
+
+const REPORT_STRUCTURE_SCHEMA_SPEC = [
+  'Extract its chapter/section structure as STRICT JSON (no markdown fences, no commentary):',
+  '{"report_title": string, "chapters": [{"chapter_id": snake_case string, "chapter_title": string,',
+  '"kind": one of "narrative"|"auto_entries"|"auto_evaluations", "guidance": string (one short sentence',
+  'describing what the student should write or what belongs in this chapter)}]}.',
+  'Rules: a chapter that IS the daily activity log / logbook / training diary (the day-by-day record)',
+  'is "auto_entries"; a chapter that is a supervisor evaluation / performance assessment is',
+  '"auto_evaluations"; EVERYTHING ELSE (introduction, company background, reflection, literature review,',
+  'methodology, findings, discussion, conclusion, recommendations, references, appendices other than the',
+  'logbook/evaluations) is "narrative". If the document is a FILLED example rather than a blank template,',
+  'infer the general chapter structure it implies and ignore the specific content actually written.',
+  'Keep the original language of chapter titles. Maximum 15 chapters. Skip cover-page decoration,',
+  'page numbers, and signature blocks - they are not chapters.',
+].join(' ');
+
+const IMPORT_REPORT_PROMPT = [
+  'You are analyzing a scanned or photographed final internship/training report document.',
+  REPORT_STRUCTURE_SCHEMA_SPEC,
+].join(' ');
+
+const IMPORT_REPORT_PROMPT_TEXT = [
+  'You are analyzing text extracted from a final internship/training report document.',
+  REPORT_STRUCTURE_SCHEMA_SPEC,
+].join(' ');
+
+const ALLOWED_CHAPTER_KINDS = new Set(['narrative', 'auto_entries', 'auto_evaluations']);
+
+// Keyword allowlist for the AI-draftable flag (evidence-groundable chapters
+// only) — a chapter like "Literature Review" or "Company SWOT Analysis" has
+// no basis in the intern's daily-log evidence, so drafting it would just
+// invite the model to invent facts. Reflection/summary/conclusion-style
+// chapters ARE reasonably groundable in what the intern actually logged.
+const AI_DRAFTABLE_KEYWORDS = [
+  'reflect', 'conclusion', 'recommend', 'summary', 'lesson', 'experience',
+  'takeaway', 'learning outcome',
+];
+
+function isAiDraftable(title: string, guidance: string): boolean {
+  const s = `${title} ${guidance}`.toLowerCase();
+  return AI_DRAFTABLE_KEYWORDS.some((kw) => s.includes(kw));
+}
+
+/** Server-side authority: AI output never reaches the authoring page unvalidated. */
+function sanitizeReportStructure(raw: Record<string, unknown>) {
+  const chapters = (Array.isArray(raw?.chapters) ? raw.chapters : []).slice(0, 15);
+  const out: Record<string, unknown>[] = [];
+  const seenIds = new Set<string>();
+  chapters.forEach((c: Record<string, unknown>, i: number) => {
+    const title = String(c?.chapter_title ?? '').trim().slice(0, 100);
+    if (!title) return;
+    let cid = slug(String(c?.chapter_id ?? title), `chapter_${i + 1}`);
+    while (seenIds.has(cid)) cid += '_x';
+    seenIds.add(cid);
+    let kind = String(c?.kind ?? 'narrative');
+    if (!ALLOWED_CHAPTER_KINDS.has(kind)) kind = 'narrative';
+    const guidance = String(c?.guidance ?? '').trim().slice(0, 300);
+    out.push({
+      chapter_id: cid,
+      chapter_title: title,
+      kind,
+      guidance,
+      ai_draftable: kind === 'narrative' && isAiDraftable(title, guidance),
+    });
+  });
+  if (out.length === 0) return null;
+  return {
+    report_title: String(raw?.report_title ?? 'Final Training Report').trim().slice(0, 100) || 'Final Training Report',
+    chapters: out,
+  };
+}
+
 function parseModelJson(text: string): Record<string, unknown> | null {
   const cleaned = text.trim().replace(/^```(json)?/i, '').replace(/```$/, '').trim();
   const start = cleaned.indexOf('{');
@@ -319,12 +493,12 @@ function parseModelJson(text: string): Record<string, unknown> | null {
   try { return JSON.parse(cleaned.slice(start, end + 1)); } catch { return null; }
 }
 
-async function visionOpenAI(key: string, system: string, mime: string, b64: string, maxTokens: number): Promise<AiResult> {
+async function visionOpenAI(key: string, system: string, mime: string, b64: string, maxTokens: number, model?: string): Promise<AiResult> {
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
     body: JSON.stringify({
-      model: 'gpt-4o-mini',
+      model: model || DEFAULT_MODELS.openai,
       max_tokens: maxTokens,
       messages: [
         { role: 'system', content: system },
@@ -344,7 +518,7 @@ async function visionOpenAI(key: string, system: string, mime: string, b64: stri
   };
 }
 
-async function visionAnthropic(key: string, system: string, mime: string, b64: string, maxTokens: number): Promise<AiResult> {
+async function visionAnthropic(key: string, system: string, mime: string, b64: string, maxTokens: number, model?: string): Promise<AiResult> {
   const block = mime === 'application/pdf'
     ? { type: 'document', source: { type: 'base64', media_type: mime, data: b64 } }
     : { type: 'image', source: { type: 'base64', media_type: mime, data: b64 } };
@@ -352,7 +526,7 @@ async function visionAnthropic(key: string, system: string, mime: string, b64: s
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
     body: JSON.stringify({
-      model: 'claude-haiku-4-5-20251001',
+      model: model || DEFAULT_MODELS.anthropic,
       max_tokens: maxTokens,
       system,
       messages: [{ role: 'user', content: [block, { type: 'text', text: 'Extract the form structure from this document.' }] }],
@@ -367,9 +541,9 @@ async function visionAnthropic(key: string, system: string, mime: string, b64: s
   };
 }
 
-async function visionGemini(key: string, system: string, mime: string, b64: string, maxTokens: number): Promise<AiResult> {
+async function visionGemini(key: string, system: string, mime: string, b64: string, maxTokens: number, model?: string): Promise<AiResult> {
   const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${model || DEFAULT_MODELS.gemini}:generateContent?key=${key}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -506,10 +680,58 @@ Deno.serve(async (req) => {
     if (action === 'list_keys') {
       const { data, error } = await admin
         .from('ai_credentials')
-        .select('provider, created_at')
+        .select('provider, created_at, model')
         .eq('user_id', user.id);
       if (error) return json({ success: false, error: error.message }, 500);
       return json({ success: true, keys: data ?? [] });
+    }
+
+    // ── list_models (v11): LIVE list from the provider's own API ───────
+    if (action === 'list_models') {
+      const provider = String(body.provider ?? '');
+      if (!PROVIDERS[provider]) return json({ success: false, error: 'Unknown provider' }, 400);
+
+      const { data: cred } = await admin
+        .from('ai_credentials')
+        .select('encrypted_key')
+        .eq('user_id', user.id)
+        .eq('provider', provider)
+        .maybeSingle();
+
+      let key: string;
+      if (cred?.encrypted_key) {
+        if (!ENC_SECRET) return json({ success: false, error: 'Server missing encryption secret' }, 500);
+        key = await decrypt(cred.encrypted_key);
+      } else if (provider === 'openai' && PLATFORM_OPENAI_KEY) {
+        key = PLATFORM_OPENAI_KEY;
+      } else {
+        return json({ success: false, error: 'Save your own API key for this provider first, then you can pick a model.' }, 400);
+      }
+
+      try {
+        const models = await listProviderModels(provider, key);
+        return json({ success: true, models });
+      } catch (err) {
+        return json({ success: false, error: String(err?.message ?? err) }, 502);
+      }
+    }
+
+    // ── set_model (v11): choose which model a BYOK provider key uses ──
+    if (action === 'set_model') {
+      const provider = String(body.provider ?? '');
+      if (!PROVIDERS[provider]) return json({ success: false, error: 'Unknown provider' }, 400);
+      const model = String(body.model ?? '').trim().slice(0, 100) || null;
+
+      const { data, error } = await admin
+        .from('ai_credentials')
+        .update({ model })
+        .eq('user_id', user.id)
+        .eq('provider', provider)
+        .select('provider')
+        .maybeSingle();
+      if (error) return json({ success: false, error: error.message }, 500);
+      if (!data) return json({ success: false, error: 'Save an API key for this provider first.' }, 400);
+      return json({ success: true, model });
     }
 
     // ── generate ──────────────────────────────────────────────────────
@@ -529,7 +751,7 @@ Deno.serve(async (req) => {
       // Tier resolution: BYOK first
       const { data: cred } = await admin
         .from('ai_credentials')
-        .select('provider, encrypted_key')
+        .select('provider, encrypted_key, model')
         .eq('user_id', user.id)
         .eq('provider', requestedProvider)
         .maybeSingle();
@@ -537,14 +759,17 @@ Deno.serve(async (req) => {
       let tier: 'byok' | 'bundled';
       let provider: string;
       let key: string;
+      let model: string | undefined;
 
       if (cred?.encrypted_key) {
         if (!ENC_SECRET) return json({ success: false, error: 'Server missing encryption secret' }, 500);
         tier = 'byok';
         provider = cred.provider;
         key = await decrypt(cred.encrypted_key);
+        model = cred.model ?? undefined;
       } else {
-        // Bundled tier — platform OpenAI key, capped, pass-holders only (Phase 4)
+        // Bundled tier — platform OpenAI key, capped, pass-holders only (Phase 4).
+        // Fixed model (not user-selectable) so bundled costs stay predictable.
         if (!PLATFORM_OPENAI_KEY) {
           return json({
             success: false,
@@ -570,7 +795,7 @@ Deno.serve(async (req) => {
         key = PLATFORM_OPENAI_KEY;
       }
 
-      const result = await PROVIDERS[provider](key, system, text, maxTokens);
+      const result = await PROVIDERS[provider](key, system, text, maxTokens, model);
 
       // Meter bundled usage only (BYOK is user-billed)
       if (tier === 'bundled') {
@@ -608,7 +833,7 @@ Deno.serve(async (req) => {
       // Tier resolution (same as generate)
       const { data: cred } = await admin
         .from('ai_credentials')
-        .select('provider, encrypted_key')
+        .select('provider, encrypted_key, model')
         .eq('user_id', user.id)
         .eq('provider', requestedProvider)
         .maybeSingle();
@@ -616,11 +841,13 @@ Deno.serve(async (req) => {
       let tier: 'byok' | 'bundled';
       let provider: string;
       let key: string;
+      let model: string | undefined;
       if (cred?.encrypted_key) {
         if (!ENC_SECRET) return json({ success: false, error: 'Server missing encryption secret' }, 500);
         tier = 'byok';
         provider = cred.provider;
         key = await decrypt(cred.encrypted_key);
+        model = cred.model ?? undefined;
       } else {
         if (!PLATFORM_OPENAI_KEY) {
           return json({ success: false, error: 'No AI key available. Add your own key in Profile → AI Assistant.' }, 402);
@@ -651,17 +878,17 @@ Deno.serve(async (req) => {
         const extracted = await extractPdfText(b64);
         if (extracted.length > 200) {
           extraction = 'text';
-          result = await PROVIDERS[provider](key, IMPORT_PROMPT_TEXT, extracted.slice(0, 12000), 4000);
+          result = await PROVIDERS[provider](key, IMPORT_PROMPT_TEXT, extracted.slice(0, 12000), 4000, model);
         } else if (provider === 'openai') {
           return json({
             success: false,
             error: 'This PDF looks scanned (no selectable text) and needs a Gemini or Claude key to read as an image — or upload a photo/screenshot of the form instead.',
           }, 400);
         } else {
-          result = await VISION_PROVIDERS[provider](key, IMPORT_PROMPT, mime, b64, 4000);
+          result = await VISION_PROVIDERS[provider](key, IMPORT_PROMPT, mime, b64, 4000, model);
         }
       } else {
-        result = await VISION_PROVIDERS[provider](key, IMPORT_PROMPT, mime, b64, 4000);
+        result = await VISION_PROVIDERS[provider](key, IMPORT_PROMPT, mime, b64, 4000, model);
       }
 
       if (tier === 'bundled') {
@@ -684,6 +911,99 @@ Deno.serve(async (req) => {
       }
 
       return json({ success: true, template: sanitized, tier: tier, provider: provider, extraction });
+    }
+
+    // ── import_report_structure (Phase B): full report → chapter list ──
+    if (action === 'import_report_structure') {
+      const mime = String(body.mime ?? '');
+      const b64 = String(body.file_base64 ?? '');
+      const requestedProvider = String(body.provider ?? 'openai');
+      const ALLOWED_MIMES = ['image/png', 'image/jpeg', 'image/webp', 'application/pdf'];
+      if (!ALLOWED_MIMES.includes(mime)) {
+        return json({ success: false, error: 'Upload a PNG/JPG photo or a PDF of the report.' }, 400);
+      }
+      if (!b64 || b64.length > 8_000_000) {
+        return json({ success: false, error: 'File too large — keep it under ~5 MB.' }, 400);
+      }
+
+      const { data: cred } = await admin
+        .from('ai_credentials')
+        .select('provider, encrypted_key, model')
+        .eq('user_id', user.id)
+        .eq('provider', requestedProvider)
+        .maybeSingle();
+
+      let tier: 'byok' | 'bundled';
+      let provider: string;
+      let key: string;
+      let model: string | undefined;
+      if (cred?.encrypted_key) {
+        if (!ENC_SECRET) return json({ success: false, error: 'Server missing encryption secret' }, 500);
+        tier = 'byok';
+        provider = cred.provider;
+        key = await decrypt(cred.encrypted_key);
+        model = cred.model ?? undefined;
+      } else {
+        if (!PLATFORM_OPENAI_KEY) {
+          return json({ success: false, error: 'No AI key available. Add your own key in Profile → AI Assistant.' }, 402);
+        }
+        if (!(await hasActivePass(user.id))) {
+          return json({
+            success: false,
+            error: 'Bundled AI comes with the internship pass — activate a pass, or add your own key in Profile → AI Assistant.',
+            code: 'PASS_REQUIRED',
+          }, 402);
+        }
+        const used = await monthlyUsage(user.id);
+        if (used >= MONTHLY_CAP) {
+          return json({ success: false, error: `Monthly AI quota reached (${MONTHLY_CAP} tokens).` }, 429);
+        }
+        tier = 'bundled';
+        provider = 'openai';
+        key = PLATFORM_OPENAI_KEY;
+      }
+
+      // Text-first, same reasoning as import_form: cheaper, more accurate on
+      // long documents, and works with any provider. Vision only for scans.
+      let result: AiResult;
+      let extraction: 'text' | 'vision' = 'vision';
+      if (mime === 'application/pdf') {
+        const extracted = await extractPdfText(b64);
+        if (extracted.length > 200) {
+          extraction = 'text';
+          result = await PROVIDERS[provider](key, IMPORT_REPORT_PROMPT_TEXT, extracted.slice(0, 16000), 6000, model);
+        } else if (provider === 'openai') {
+          return json({
+            success: false,
+            error: 'This PDF looks scanned (no selectable text) and needs a Gemini or Claude key to read as an image — or upload a photo/screenshot instead.',
+          }, 400);
+        } else {
+          result = await VISION_PROVIDERS[provider](key, IMPORT_REPORT_PROMPT, mime, b64, 6000, model);
+        }
+      } else {
+        result = await VISION_PROVIDERS[provider](key, IMPORT_REPORT_PROMPT, mime, b64, 6000, model);
+      }
+
+      if (tier === 'bundled') {
+        await admin.from('ai_usage').insert({
+          user_id: user.id,
+          feature: 'report_structure_import',
+          provider: provider,
+          tokens_in: result.tokensIn,
+          tokens_out: result.tokensOut,
+        });
+      }
+
+      const parsed = parseModelJson(result.text);
+      const sanitized = parsed ? sanitizeReportStructure(parsed) : null;
+      if (!sanitized) {
+        return json({
+          success: false,
+          error: 'Could not read a chapter structure from that file. Try a clearer photo/PDF or a shorter excerpt (e.g. just the table of contents).',
+        }, 422);
+      }
+
+      return json({ success: true, structure: sanitized, tier: tier, provider: provider, extraction });
     }
 
     return json({ success: false, error: 'Unknown action' }, 400);

@@ -7,6 +7,9 @@
  *
  * @file src/services/api/aiService.js
  * @created July 9, 2026 - Session 3
+ * @updated July 12, 2026 - v11: listModels/setModel — per-BYOK-provider model
+ *   choice, populated from that provider's own live model list (gateway
+ *   never hardcodes a model string anymore).
  */
 
 import { supabase } from '../supabase/client';
@@ -40,8 +43,18 @@ export const aiService = {
   /** Remove a stored key. */
   deleteKey: (provider) => call({ action: 'delete_key', provider }),
 
-  /** List providers that have a stored key (no key material returned). */
+  /** List providers that have a stored key (+ chosen model, if any). No key material returned. */
   listKeys: () => call({ action: 'list_keys' }),
+
+  /**
+   * LIVE list of usable models for a provider, straight from that
+   * provider's own API (never hardcoded client-side) — uses the intern's
+   * stored BYOK key for that provider (or the bundled key, for openai only).
+   */
+  listModels: (provider) => call({ action: 'list_models', provider }),
+
+  /** Save which model a BYOK provider key should use. model: '' reverts to the built-in default. */
+  setModel: (provider, model) => call({ action: 'set_model', provider, model }),
 
   /**
    * Polish rough log notes into formal text.
@@ -63,6 +76,13 @@ export const aiService = {
    */
   generate: (feature, text, hints = {}, provider = 'openai') =>
     call({ action: 'generate', feature, text, hints, provider }),
+
+  /**
+   * Phase B (Case 2): extract a chapter structure from an uploaded full
+   * training-report document (PDF/photo) — mirrors import_form's shape.
+   */
+  importReportStructure: (mime, file_base64, provider = 'gemini') =>
+    call({ action: 'import_report_structure', mime, file_base64, provider }),
 };
 
 export default aiService;

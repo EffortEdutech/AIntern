@@ -47,10 +47,21 @@ export class AuthService {
       console.log('🔐 Signing up user:', email);
 
       // ── Step 1: Create auth.users row ──────────────────────────────────
+      // emailRedirectTo is set explicitly (self-configuring to whatever
+      // origin the signup actually happened on, same pattern as
+      // resetPassword() below) — WITHOUT this, Supabase falls back to the
+      // "Site URL" configured in Dashboard > Authentication > URL
+      // Configuration, which is almost certainly still the original
+      // http://localhost:4900 from local dev and was never updated after
+      // deploying to Vercel. This must ALSO be added to Dashboard >
+      // Authentication > URL Configuration > Redirect URLs (an allow-list)
+      // or Supabase will silently ignore it and fall back to the stale
+      // Site URL anyway — this code change alone is not sufficient.
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
+          emailRedirectTo: `${window.location.origin}/`,
           data: {
             full_name:    metadata.full_name    || '',
             phone: metadata.phone || '',

@@ -7,6 +7,8 @@
  * @file src/pages/intern/InternProfile.jsx
  * @created July 9, 2026 - Session 2
  * @updated July 9, 2026 - Session 3: AI BYOK section
+ * @updated July 12, 2026 - v11: per-BYOK-provider model picker, fetched live
+ *   from that provider's own model-list API (never a hardcoded model name).
  */
 
 import React, { useEffect, useState } from 'react';
@@ -59,6 +61,11 @@ export default function InternProfile() {
   const [aiKey, setAiKey] = useState('');
   const [savedKeys, setSavedKeys] = useState([]);
   const [aiSaving, setAiSaving] = useState(false);
+
+  // Model choice per BYOK provider (v11): options are fetched on demand from
+  // that provider's own live model-list API, never hardcoded here.
+  const [modelOptions, setModelOptions] = useState({}); // { [provider]: [{id,label}] }
+  const [modelsLoading, setModelsLoading] = useState({}); // { [provider]: bool }
 
   useEffect(() => {
     if (profile) {
@@ -210,7 +217,35 @@ export default function InternProfile() {
     const res = await aiService.deleteKey(provider);
     if (res.success) {
       setSavedKeys((k) => k.filter((x) => x.provider !== provider));
+      setModelOptions((m) => { const n = { ...m }; delete n[provider]; return n; });
       toast.success('Key removed');
+    } else {
+      toast.error(res.error);
+    }
+  };
+
+  // Toggle the model picker open/closed for a provider, fetching the LIVE
+  // list from that provider's own API the first time (never hardcoded).
+  const toggleModelPicker = async (provider) => {
+    if (modelOptions[provider]) {
+      setModelOptions((m) => { const n = { ...m }; delete n[provider]; return n; });
+      return;
+    }
+    setModelsLoading((s) => ({ ...s, [provider]: true }));
+    const res = await aiService.listModels(provider);
+    setModelsLoading((s) => ({ ...s, [provider]: false }));
+    if (res.success) {
+      setModelOptions((m) => ({ ...m, [provider]: res.models ?? [] }));
+    } else {
+      toast.error(res.error);
+    }
+  };
+
+  const chooseModel = async (provider, model) => {
+    const res = await aiService.setModel(provider, model);
+    if (res.success) {
+      setSavedKeys((keys) => keys.map((k) => (k.provider === provider ? { ...k, model: model || null } : k)));
+      toast.success(model ? 'Model saved' : 'Reverted to the default model');
     } else {
       toast.error(res.error);
     }
@@ -467,17 +502,52 @@ export default function InternProfile() {
               {savedKeys.map((k) => (
                 <li
                   key={k.provider}
-                  className="flex items-center justify-between rounded-lg border border-gray-200 px-3 py-2"
+                  className="rounded-lg border border-gray-200 px-3 py-2 space-y-2"
                 >
-                  <span className="text-sm text-gray-700 capitalize">
-                    {k.provider} · ••••••••
-                  </span>
-                  <button
-                    onClick={() => removeAiKey(k.provider)}
-                    className="text-xs text-red-600 font-medium hover:text-red-700"
-                  >
-                    Remove
-                  </button>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-700 capitalize">
+                      {k.provider} · ••••••••
+                    </span>
+                    <button
+                      onClick={() => removeAiKey(k.provider)}
+                      className="text-xs text-red-600 font-medium hover:text-red-700"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs text-gray-500">
+                      Model: <span className="font-medium text-gray-700">{k.model || 'default'}</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => toggleModelPicker(k.provider)}
+                      disabled={modelsLoading[k.provider]}
+                      className="text-xs text-blue-700 font-medium underline disabled:opacity-40"
+                    >
+                      {modelsLoading[k.provider]
+                        ? 'Checking available models…'
+                        : modelOptions[k.provider] ? 'Close' : 'Change'}
+                    </button>
+                  </div>
+                  {modelOptions[k.provider] && (
+                    modelOptions[k.provider].length > 0 ? (
+                      <select
+                        className={inputCls}
+                        value={k.model || ''}
+                        onChange={(e) => chooseModel(k.provider, e.target.value)}
+                      >
+                        <option value="">Use the built-in default</option>
+                        {modelOptions[k.provider].map((m) => (
+                          <option key={m.id} value={m.id}>{m.label}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <p className="text-xs text-gray-400">
+                        No usable models reported by {k.provider} right now — keeping the built-in default.
+                      </p>
+                    )
+                  )}
                 </li>
               ))}
             </ul>

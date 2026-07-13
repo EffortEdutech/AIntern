@@ -23,6 +23,7 @@ import { reportVersionService } from '../../services/api/reportVersionService';
 import { aiService } from '../../services/api/aiService';
 import { useAccess } from '../../hooks/useAccess';
 import { resolveLayout } from '../../services/render/reportLayout';
+import { verificationOf } from '../../services/render/verification';
 import ReportPreview from '../../components/report/ReportPreview';
 import { useToast } from '../../context/ToastContext';
 import {
@@ -30,18 +31,6 @@ import {
   ExclamationTriangleIcon, XCircleIcon, CheckBadgeIcon, EyeIcon,
   DocumentTextIcon,
 } from '@heroicons/react/24/outline';
-
-/** Verification payload for exports of VERIFIED versions (spec 25-27). */
-function verificationOf(v) {
-  if (v?.status !== 'verified' || !v?.verification_id) return null;
-  return {
-    verification_id: v.verification_id,
-    version: v.version,
-    created_at: v.created_at,
-    content_hash: v.content_hash,
-    verify_url: `${window.location.origin}/verify?id=${v.verification_id}`,
-  };
-}
 
 function summarize(content) {
   const text = content?.['tasks.task_summary'] || '';
