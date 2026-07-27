@@ -2,7 +2,7 @@
 
 <!-- Session 6 review addendum appended July 10, 2026 — see below -->
 
-**Last Updated:** July 27, 2026 — Report Center template freeze hardening applied
+**Last Updated:** July 27, 2026 — Final Report title freeze hardening built
 
 ## 📊 OVERALL STATUS
 
@@ -706,3 +706,49 @@ as appendix chapters, and the same immutable-snapshot + Verification Appendix
 #### Next
 - User e2e with real Weekly/Monthly institution samples.
 - After e2e, decide whether Report Center needs narrative authoring fields for imported `narrative` sections, or whether evidence-only approved logs are enough for v1.1.
+
+---
+
+### Final Report hardening - freeze final report title per official version
+**Date:** July 27, 2026
+
+**Trigger:** user asked to proceed with Final Report while Weekly/Monthly real-sample e2e is deferred.
+
+#### New / changed
+- `database/migrations/012_freeze_final_report_title.sql` - re-creates `create_report_snapshot()` so new `final` report versions freeze `content.final_report_title` together with the already-frozen chapter list and narrative draft.
+- `src/pages/report/FinalReportPage.jsx` - PDF/Word export now prefers `content.final_report_title`, falling back to the current chapter template title only for older versions.
+
+#### Architecture notes
+- Verification status is unchanged: still server-computed from approved entries and pending submissions only.
+- Final report title/chapter/narrative data is presentation metadata only; it cannot create approvals, evaluations, Verification IDs, or verified status.
+- Existing final versions without `content.final_report_title` remain exportable through fallback behavior.
+
+#### Verification
+- `npm run build` passed.
+- `git diff --check` passed for changed files.
+- Graphify refreshed after implementation: 1491 nodes, 3019 edges, 94 communities.
+- Live DB apply is pending: Codex CLI hit Supabase `403` on `db query --linked --file database\migrations\012_freeze_final_report_title.sql`.
+
+#### Required live apply command
+Run from a Supabase account/session with database query permission:
+
+```powershell
+$env:SUPABASE_TELEMETRY_DISABLED='1'
+npx --yes supabase@latest db query --linked --file database\migrations\012_freeze_final_report_title.sql
+```
+
+Then verify:
+
+```powershell
+npx --yes supabase@latest db query --linked "select position('final_report_title' in pg_get_functiondef('public.create_report_snapshot(uuid,text,date,date)'::regprocedure)) as freeze_marker_position;"
+```
+
+#### User test path
+1. Final Report Studio -> use default or imported final report structure.
+2. Create official final version.
+3. Change/revert the active final report structure.
+4. Download the older final version again -> title and chapters should stay frozen from creation time once migration 012 is applied live.
+
+#### Next
+- User e2e for Final Report upload/extract/apply/create/export.
+- Optional: add a visible "frozen title/template" line in the official version list after e2e confirms the data path.

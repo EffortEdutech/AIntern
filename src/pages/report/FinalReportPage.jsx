@@ -180,7 +180,7 @@ export default function FinalReportPage() {
       const common = {
         profile: c.intern,
         internship: c.internship,
-        reportTitle: chapterInfo?.reportTitle,
+        reportTitle: c.final_report_title ?? chapterInfo?.reportTitle,
         chapters: c.chapters ?? [],
         draft: c.narrative_draft ?? {},
         snapshots: c.entries ?? [],
