@@ -243,6 +243,12 @@ export function reportTemplateToPdfTemplate(template) {
   };
 }
 
+export function reportTemplateFromSnapshot(content, fallback) {
+  const frozen = content?.report_center_template;
+  if (!frozen || typeof frozen !== 'object') return fallback;
+  return normalizePeriodReportTemplate(frozen, frozen.report_type ?? fallback?.report_type);
+}
+
 function iso(d) {
   return d.toISOString().split('T')[0];
 }

@@ -27,6 +27,7 @@ import {
   currentWeekPeriod,
   normalizePeriodReportTemplate,
   reportTemplateOptions,
+  reportTemplateFromSnapshot,
   reportTemplateToPdfTemplate,
   selectedReportTemplate,
   templateAsJson,
@@ -237,8 +238,11 @@ export default function ReportCenterPage() {
     }
   };
 
-  const templateForVersion = (reportType) => {
-    const template = selectedReportTemplate(internship, reportType);
+  const templateForVersion = (reportType, content = null) => {
+    const template = reportTemplateFromSnapshot(
+      content,
+      selectedReportTemplate(internship, reportType),
+    );
     return reportTemplateToPdfTemplate(template);
   };
 
@@ -248,10 +252,14 @@ export default function ReportCenterPage() {
       const res = await reportVersionService.getVersion(versionId);
       if (!res.success) throw new Error(res.error);
       const c = res.data.content;
-      const tpl = templateForVersion(res.data.report_type);
+      const frozenTemplate = reportTemplateFromSnapshot(
+        c,
+        selectedReportTemplate(internship, res.data.report_type),
+      );
+      const tpl = templateForVersion(res.data.report_type, c);
       const layout = {
         ...resolveLayout(tpl, internship),
-        ...selectedReportTemplate(internship, res.data.report_type).layout,
+        ...frozenTemplate.layout,
       };
       const verification = verificationOf(res.data);
       const common = {
