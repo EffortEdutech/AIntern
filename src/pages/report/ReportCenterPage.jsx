@@ -12,6 +12,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import InternShell from '../../components/layout/InternShell';
+import Modal from '../../components/common/Modal';
+import { PeriodReportTemplatePreview } from '../../components/report/ReportTemplatePreview';
 import { useAuth } from '../../context/AuthContext';
 import { aiService } from '../../services/api/aiService';
 import { internshipService } from '../../services/api/internshipService';
@@ -92,6 +94,8 @@ export default function ReportCenterPage() {
   const [provider, setProvider] = useState('gemini');
   const [sampleFile, setSampleFile] = useState(null);
   const [structureDraft, setStructureDraft] = useState(null);
+  const [showDraftPreview, setShowDraftPreview] = useState(false);
+  const [showActivePreview, setShowActivePreview] = useState(false);
 
   const loadVersions = async (internshipId) => {
     const [weekly, monthly] = await Promise.all([
@@ -177,7 +181,8 @@ export default function ReportCenterPage() {
           filename: sampleFile.name,
         },
       });
-      toast.success('Sample extracted. Review the JSON before applying it.');
+      setShowDraftPreview(true);
+      toast.success('Sample extracted. Review the visual preview before applying it.');
     } catch (err) {
       toast.error('Extraction failed: ' + err.message);
     } finally {
@@ -206,6 +211,7 @@ export default function ReportCenterPage() {
     if (res.success) {
       setInternship(res.data);
       setStructureDraft(null);
+      setShowDraftPreview(false);
       toast.success('Custom report template applied.');
     } else {
       toast.error(res.error);
@@ -424,9 +430,13 @@ export default function ReportCenterPage() {
                           <span className="rounded-full bg-white px-2 py-1 border border-gray-200">{structureDraft.meta.provider}</span>
                           <span className="rounded-full bg-white px-2 py-1 border border-gray-200">{structureDraft.meta.extraction}</span>
                         </div>
-                        <pre className="max-h-64 overflow-auto rounded-lg bg-slate-950 p-3 text-[11px] leading-relaxed text-slate-100">
-                          {JSON.stringify(templateAsJson(structureDraft.template), null, 2)}
-                        </pre>
+                        <button
+                          type="button"
+                          onClick={() => setShowDraftPreview(true)}
+                          className="w-full rounded-lg border border-gray-300 bg-white py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                        >
+                          Preview extracted template
+                        </button>
                         <div className="grid grid-cols-2 gap-2">
                           <button
                             type="button"
@@ -490,16 +500,26 @@ export default function ReportCenterPage() {
             <section className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
               <div className="flex items-center gap-2">
                 <CalendarDaysIcon className="w-5 h-5 text-slate-700" />
-                <h2 className="font-semibold text-gray-900">Active JSON template</h2>
+                <h2 className="font-semibold text-gray-900">Active template preview</h2>
               </div>
               <p className="text-xs text-gray-500">
                 {activeType === REPORT_TYPES.FINAL
                   ? 'Final report structure is managed in the Final Report Studio.'
                   : `Current period: ${periodLabel(period)}`}
               </p>
-              <pre className="max-h-80 overflow-auto rounded-lg bg-slate-950 p-3 text-[11px] leading-relaxed text-slate-100">
-                {JSON.stringify(activeJson, null, 2)}
-              </pre>
+              {activeType === REPORT_TYPES.FINAL ? (
+                <Link to="/final-report" className="inline-flex w-full items-center justify-center rounded-lg border border-gray-300 py-2.5 text-sm font-medium text-gray-700">
+                  Open Final Report Studio
+                </Link>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setShowActivePreview(true)}
+                  className="w-full rounded-lg border border-gray-300 bg-white py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  Preview current template
+                </button>
+              )}
             </section>
 
             {activeType !== REPORT_TYPES.FINAL && (
@@ -554,6 +574,76 @@ export default function ReportCenterPage() {
           </>
         )}
       </div>
+
+      <Modal
+        isOpen={showDraftPreview && Boolean(structureDraft)}
+        onClose={() => setShowDraftPreview(false)}
+        title="Extracted template preview"
+        size="xl"
+        footer={(
+          <>
+            <button
+              type="button"
+              onClick={() => setShowDraftPreview(false)}
+              className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700"
+            >
+              Keep reviewing
+            </button>
+            <button
+              type="button"
+              onClick={applyCustomTemplate}
+              disabled={busy}
+              className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
+            >
+              Apply custom template
+            </button>
+          </>
+        )}
+      >
+        {structureDraft && (
+          <div className="space-y-3">
+            <div className="flex flex-wrap gap-2 text-[11px] text-gray-500">
+              <span className="rounded-full bg-white px-2 py-1 border border-gray-200">{structureDraft.meta.filename}</span>
+              <span className="rounded-full bg-white px-2 py-1 border border-gray-200">{structureDraft.meta.provider}</span>
+              <span className="rounded-full bg-white px-2 py-1 border border-gray-200">{structureDraft.meta.extraction}</span>
+            </div>
+            <PeriodReportTemplatePreview
+              template={structureDraft.template}
+              profile={profile}
+              internship={internship}
+              periodLabel={periodLabel(period)}
+            />
+            <details className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+              <summary className="cursor-pointer text-xs font-medium text-gray-600">Technical JSON</summary>
+              <pre className="mt-2 max-h-56 overflow-auto rounded-lg bg-slate-950 p-3 text-[11px] leading-relaxed text-slate-100">
+                {JSON.stringify(templateAsJson(structureDraft.template), null, 2)}
+              </pre>
+            </details>
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        isOpen={showActivePreview && activeType !== REPORT_TYPES.FINAL}
+        onClose={() => setShowActivePreview(false)}
+        title="Current template preview"
+        size="xl"
+      >
+        <div className="space-y-3">
+          <PeriodReportTemplatePreview
+            template={selectedTemplate}
+            profile={profile}
+            internship={internship}
+            periodLabel={periodLabel(period)}
+          />
+          <details className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+            <summary className="cursor-pointer text-xs font-medium text-gray-600">Technical JSON</summary>
+            <pre className="mt-2 max-h-56 overflow-auto rounded-lg bg-slate-950 p-3 text-[11px] leading-relaxed text-slate-100">
+              {JSON.stringify(activeJson, null, 2)}
+            </pre>
+          </details>
+        </div>
+      </Modal>
     </InternShell>
   );
 }

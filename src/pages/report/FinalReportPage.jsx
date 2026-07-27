@@ -15,6 +15,8 @@
 
 import { useEffect, useRef, useState } from 'react';
 import InternShell from '../../components/layout/InternShell';
+import Modal from '../../components/common/Modal';
+import { FinalReportStructurePreview } from '../../components/report/ReportTemplatePreview';
 import { useAuth } from '../../context/AuthContext';
 import { internshipService } from '../../services/api/internshipService';
 import { logbookService } from '../../services/api/logbookService';
@@ -62,6 +64,7 @@ export default function FinalReportPage() {
   const [provider, setProvider] = useState('gemini');
   const [extracting, setExtracting] = useState(false);
   const [structureDraft, setStructureDraft] = useState(null);
+  const [showStructurePreview, setShowStructurePreview] = useState(false);
   const [applying, setApplying] = useState(false);
   const fileInput = useRef(null);
   const saveTimers = useRef({});
@@ -118,6 +121,7 @@ export default function FinalReportPage() {
     setExtracting(false);
     if (res.success) {
       setStructureDraft(res.structure);
+      setShowStructurePreview(true);
       toast.success(`Chapter structure extracted (${res.extraction === 'text' ? 'read as text' : 'read as image'}).`);
     } else {
       toast.error(res.error);
@@ -132,6 +136,7 @@ export default function FinalReportPage() {
     if (res.success) {
       setInternship(res.internship);
       setStructureDraft(null);
+      setShowStructurePreview(false);
       setFile(null);
       toast.success('Custom report structure applied.');
       await loadAll();
@@ -284,14 +289,16 @@ export default function FinalReportPage() {
               {structureDraft && (
                 <div className="border border-gray-200 rounded-lg p-3 space-y-2">
                   <p className="text-sm font-semibold text-gray-900">{structureDraft.report_title}</p>
-                  <ul className="space-y-1">
-                    {structureDraft.chapters.map((c) => (
-                      <li key={c.chapter_id} className="flex items-center justify-between text-sm">
-                        <span className="text-gray-800">{c.chapter_title}</span>
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">{c.kind}</span>
-                      </li>
-                    ))}
-                  </ul>
+                  <p className="text-xs text-gray-500">
+                    {structureDraft.chapters.length} chapters found. Preview the table of contents before applying.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setShowStructurePreview(true)}
+                    className="w-full rounded-lg border border-gray-300 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  >
+                    Preview extracted structure
+                  </button>
                   <button
                     type="button"
                     onClick={applyStructure}
@@ -424,6 +431,44 @@ export default function FinalReportPage() {
           </>
         )}
       </div>
+
+      <Modal
+        isOpen={showStructurePreview && Boolean(structureDraft)}
+        onClose={() => setShowStructurePreview(false)}
+        title="Extracted final report preview"
+        size="xl"
+        footer={(
+          <>
+            <button
+              type="button"
+              onClick={() => setShowStructurePreview(false)}
+              className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700"
+            >
+              Keep reviewing
+            </button>
+            <button
+              type="button"
+              onClick={applyStructure}
+              disabled={applying}
+              className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
+            >
+              Use this structure
+            </button>
+          </>
+        )}
+      >
+        {structureDraft && (
+          <div className="space-y-3">
+            <FinalReportStructurePreview structure={structureDraft} />
+            <details className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+              <summary className="cursor-pointer text-xs font-medium text-gray-600">Technical chapter data</summary>
+              <pre className="mt-2 max-h-56 overflow-auto rounded-lg bg-slate-950 p-3 text-[11px] leading-relaxed text-slate-100">
+                {JSON.stringify(structureDraft, null, 2)}
+              </pre>
+            </details>
+          </div>
+        )}
+      </Modal>
     </InternShell>
   );
 }

@@ -2,7 +2,7 @@
 
 <!-- Session 6 review addendum appended July 10, 2026 — see below -->
 
-**Last Updated:** July 27, 2026 — Final Report title freeze hardening built
+**Last Updated:** July 27, 2026 — Visual template preview added for extracted reports
 
 ## 📊 OVERALL STATUS
 
@@ -22,7 +22,7 @@
 | **PDF-import track — Phase A.2** | Per-field visibility + repeatable "Tasks Performed" | ✅ User-verified |
 | **PDF-import track — Phase B** | Full training-report import (chapter-based final report) | ✅ Built, awaiting user e2e |
 | **PDF-import track — Phase B hotfix** | Gemini model deprecation fix + live per-provider model picker (v11) | ✅ Built, awaiting user e2e |
-| **Report Center** | Standard templates + Weekly/Monthly sample upload → AI JSON → custom template apply + frozen official template metadata | ✅ Built, awaiting user e2e |
+| **Report Center** | Standard templates + Weekly/Monthly sample upload → visual preview → custom template apply + frozen official template metadata | ✅ Built, awaiting user e2e |
 
 ---
 
@@ -694,6 +694,8 @@ as appendix chapters, and the same immutable-snapshot + Verification Appendix
 #### Verification
 - `npm run build` passed.
 - `git diff --check` passed for changed files.
+- Graphify refreshed after implementation: 1502 nodes, 3037 edges, 96 communities.
+- Existing localhost dev server on port 4900 responded with HTTP 200.
 - Live Supabase function check passed: `pg_get_functiondef(public.create_report_snapshot(uuid,text,date,date))` contains `report_center_template`.
 - Graphify refreshed after implementation: 1484 nodes, 3012 edges, 99 communities.
 
@@ -752,3 +754,42 @@ npx --yes supabase@latest db query --linked "select position('final_report_title
 #### Next
 - User e2e for Final Report upload/extract/apply/create/export.
 - Optional: add a visible "frozen title/template" line in the official version list after e2e confirms the data path.
+
+---
+
+### Visual template review - replace JSON-first extraction review
+**Date:** July 27, 2026
+
+**Trigger:** user feedback that JSON is not a usable review surface for interns; users need to see whether the extracted report format looks right visually before applying it.
+
+#### New / changed
+- `src/components/report/ReportTemplatePreview.jsx` - shared report-like HTML preview:
+  - Weekly/Monthly preview renders an A4-style report page with cover/title, student/company details, extracted sections, sample activity table rows, narrative placeholders, and signature blocks;
+  - Final Report preview renders an A4-style table of contents with chapter ordering, chapter type chips, guidance text, and automatic appendix note.
+- `src/pages/report/ReportCenterPage.jsx`:
+  - after Weekly/Monthly extraction, opens a visual preview modal automatically;
+  - inline result now shows provider/file chips and a `Preview extracted template` button instead of raw JSON;
+  - active template card now opens a visual preview modal;
+  - JSON remains available only inside a collapsed `Technical JSON` details panel.
+- `src/pages/report/FinalReportPage.jsx`:
+  - after final-report chapter extraction, opens a visual table-of-contents preview modal automatically;
+  - inline result now shows chapter count and a preview button;
+  - raw structure remains available only inside a collapsed technical panel.
+
+#### Architecture notes
+- No schema changes and no new dependencies.
+- Preview is HTML-only and client-side; it does not create official records or modify verification status.
+- AI output is still sanitized by the gateway before it reaches these previews.
+
+#### Verification
+- `npm run build` passed.
+- `git diff --check` passed for changed files.
+
+#### User test path
+1. Report Center -> Weekly or Monthly -> upload sample -> Extract.
+2. Confirm a visual report preview modal opens automatically.
+3. Confirm the preview looks like a report layout: title, profile block, sections/tables/signatures.
+4. Open `Technical JSON` only if debugging is needed.
+5. Apply custom template -> click `Preview current template` -> confirm the active template is shown visually.
+6. Final Report Studio -> upload final report/TOC sample -> Extract chapter structure.
+7. Confirm a visual table-of-contents preview opens before applying.
