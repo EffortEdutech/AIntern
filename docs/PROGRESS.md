@@ -2,7 +2,7 @@
 
 <!-- Session 6 review addendum appended July 10, 2026 — see below -->
 
-**Last Updated:** July 27, 2026 — Report Center foundation built (Weekly / Monthly / Final standard templates)
+**Last Updated:** July 27, 2026 — Report Center sample import built (Weekly / Monthly AI extraction to custom JSON templates)
 
 ## 📊 OVERALL STATUS
 
@@ -22,7 +22,7 @@
 | **PDF-import track — Phase A.2** | Per-field visibility + repeatable "Tasks Performed" | ✅ User-verified |
 | **PDF-import track — Phase B** | Full training-report import (chapter-based final report) | ✅ Built, awaiting user e2e |
 | **PDF-import track — Phase B hotfix** | Gemini model deprecation fix + live per-provider model picker (v11) | ✅ Built, awaiting user e2e |
-| **Report Center foundation** | Standard Weekly / Monthly / Final report templates | ✅ Built, awaiting user e2e |
+| **Report Center** | Standard templates + Weekly/Monthly sample upload → AI JSON → custom template apply | ✅ Built, awaiting user e2e |
 
 ---
 
@@ -619,3 +619,53 @@ as appendix chapters, and the same immutable-snapshot + Verification Appendix
 
 #### Next
 - Add Weekly/Monthly sample-report upload -> AI extraction -> sanitized JSON review -> apply as custom report template, matching the existing Final Report Studio pattern.
+
+---
+
+### Report Center sample import - Weekly / Monthly custom templates built
+**Date:** July 27, 2026
+
+**Trigger:** user set the next session as: Weekly/Monthly sample report upload -> AI extraction -> sanitized JSON review -> apply as custom report template.
+
+#### New / changed
+- `supabase/functions/ai-gateway/index.ts` - new `import_period_report_structure` action:
+  - accepts Weekly/Monthly sample reports as PDF, PNG, JPG, or WebP;
+  - uses text-first PDF extraction when the PDF has selectable text;
+  - falls back to vision for scanned/photo samples through Gemini or Claude;
+  - keeps the existing AI security model: BYOK first, bundled AI only for active pass holders, bundled usage metered in `ai_usage`;
+  - returns only sanitized template JSON, never raw model output.
+- `src/services/api/aiService.js` - client wrapper for the new Report Center extraction action.
+- `src/services/render/reportTemplates.js` - custom template support:
+  - standard templates remain available;
+  - imported templates are normalized, capped, and merged from `internships.metadata.report_template_defs`;
+  - the active template is still selected through `internships.metadata.report_templates`;
+  - no new database table or production dependency.
+- `src/pages/report/ReportCenterPage.jsx` - Weekly/Monthly import workflow:
+  - upload institution sample;
+  - choose provider (Gemini, Claude, OpenAI);
+  - extract sample to JSON;
+  - review sanitized JSON in the UI;
+  - discard or apply as a custom template;
+  - applied custom templates become selectable and drive official PDF/Word export structure.
+
+#### Architecture notes
+- No change to the trust model: approved snapshots, evaluations, report versions, Verification IDs, QR, and `/verify` remain the authority.
+- The AI output controls report structure/presentation only. It cannot mint approvals, evaluations, official versions, or verification status.
+- Weekly and Monthly custom templates are stored in internship metadata with a small retained history (latest five per report type).
+- Official Weekly/Monthly reports still use the existing `report_versions` / `create_report_snapshot()` pipeline.
+
+#### Verification
+- `npm run build` passed on Windows/Codex after implementation.
+- Graphify refreshed after implementation: 1477 nodes, 3002 edges, 100 communities.
+
+#### User test path
+1. Home -> Report Center -> Weekly.
+2. Upload a weekly sample report PDF/photo -> choose Gemini or Claude for scanned files, OpenAI only for PDFs with selectable text.
+3. Click "Extract sample to JSON" -> review the sanitized JSON card.
+4. Click "Apply custom template" -> confirm the custom template chip appears and the Active JSON template changes.
+5. Set the week period -> Create official weekly report -> export PDF/Word.
+6. Repeat from Monthly with a monthly sample -> confirm monthly combined/table+narrative sections are reflected in the custom JSON.
+
+#### Next
+- User e2e on real institution Weekly/Monthly samples.
+- Optional hardening after pilot samples: freeze the selected Report Center template into each `report_versions.content` blob so historical exports keep the exact template used at creation time even if the intern changes formats later.

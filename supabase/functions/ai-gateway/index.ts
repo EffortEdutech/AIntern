@@ -21,6 +21,8 @@
  *   generate    { feature, text, hints? , provider? }
  *   import_form { mime, file_base64, provider? }  → template draft (Template Studio)
  *   import_report_structure { mime, file_base64, provider? }  → chapter list (Final Report, Phase B)
+ *   import_period_report_structure { report_type, mime, file_base64, provider? }
+ *                                                → Weekly/Monthly report template JSON
  *
  * Required secrets (Dashboard → Edge Functions → Secrets):
  *   AINTERN_KEY_ENCRYPTION_SECRET  — long random string (BYOK crypto)
@@ -485,6 +487,95 @@ function sanitizeReportStructure(raw: Record<string, unknown>) {
   };
 }
 
+// ─── Weekly/Monthly report sample import (Report Center) ────────────────
+
+const PERIOD_REPORT_SCHEMA_SPEC = [
+  'Extract its reusable weekly/monthly internship report structure as STRICT JSON (no markdown fences, no commentary):',
+  '{"report_type": "weekly"|"monthly", "report_title": string,',
+  '"layout": {"title": string, "density": "normal"|"compact", "show_cover": boolean,',
+  '"show_signatures": boolean, "show_comments": boolean, "show_evaluations": boolean, "footer_text": string},',
+  '"sections": [{"id": snake_case string, "title": string,',
+  '"kind": one of "profile_info"|"period_summary"|"computed_summary"|"auto_entries_narrative"|',
+  '"auto_entries_table"|"narrative"|"comments_table"|"auto_evaluations"|"signature",',
+  '"source": string (short source note)}]}.',
+  'Rules: "profile_info" is student/company/supervisor metadata; "period_summary" or',
+  '"computed_summary" is totals/attendance/hours/progress; "auto_entries_table" is day-by-day',
+  'approved log entries in a table; "auto_entries_narrative" is approved log entries summarized',
+  'as prose; "comments_table" is supervisor comments; "auto_evaluations" is supervisor evaluation',
+  'content; "signature" is signature/verification blocks; "narrative" is student-written reflection,',
+  'learning, challenges, problems/solutions, or plans. For weekly samples, preserve narrative/table/both',
+  'depending on the sample. For monthly samples, prefer combined tables plus narrative reflections when visible.',
+  'If the sample is filled, infer the blank/reusable structure and ignore specific student names, dates, or tasks.',
+  'Keep section titles in the original language. Maximum 12 sections. Skip logos, decorative headers, and page numbers.',
+].join(' ');
+
+function periodReportPrompt(reportType: string, mode: 'text' | 'vision'): string {
+  const typeHint = reportType === 'monthly' ? 'monthly' : 'weekly';
+  return [
+    mode === 'text'
+      ? `You are analyzing text extracted from a ${typeHint} internship report sample.`
+      : `You are analyzing a scanned or photographed ${typeHint} internship report sample.`,
+    `The requested report_type is "${typeHint}".`,
+    PERIOD_REPORT_SCHEMA_SPEC,
+  ].join(' ');
+}
+
+const ALLOWED_PERIOD_SECTION_KINDS = new Set([
+  'profile_info',
+  'period_summary',
+  'computed_summary',
+  'auto_entries_narrative',
+  'auto_entries_table',
+  'narrative',
+  'comments_table',
+  'auto_evaluations',
+  'signature',
+]);
+
+/** Server-side authority: AI output never reaches Report Center unvalidated. */
+function sanitizePeriodReportStructure(raw: Record<string, unknown>, requestedType: string) {
+  const reportType = requestedType === 'monthly' ? 'monthly' : 'weekly';
+  const fallbackTitle = reportType === 'monthly' ? 'Monthly Industrial Training Report' : 'Weekly Industrial Training Report';
+  const layout = (raw?.layout && typeof raw.layout === 'object' ? raw.layout : {}) as Record<string, unknown>;
+  const sections = (Array.isArray(raw?.sections) ? raw.sections : []).slice(0, 12);
+  const out: Record<string, unknown>[] = [];
+  const seenIds = new Set<string>();
+
+  sections.forEach((s: Record<string, unknown>, i: number) => {
+    const title = String(s?.title ?? '').trim().slice(0, 100);
+    if (!title) return;
+    let id = slug(String(s?.id ?? title), `section_${i + 1}`);
+    while (seenIds.has(id)) id += '_x';
+    seenIds.add(id);
+    let kind = String(s?.kind ?? 'narrative');
+    if (!ALLOWED_PERIOD_SECTION_KINDS.has(kind)) kind = 'narrative';
+    out.push({
+      id,
+      title,
+      kind,
+      source: String(s?.source ?? '').trim().slice(0, 120) || 'institution_sample',
+    });
+  });
+
+  if (out.length === 0) return null;
+  return {
+    id: `custom_${reportType}_${Date.now().toString(36)}`,
+    report_type: reportType,
+    name: String(raw?.report_title ?? fallbackTitle).trim().slice(0, 80) || fallbackTitle,
+    description: 'Imported from an institution sample report.',
+    layout: {
+      title: String(layout.title ?? raw?.report_title ?? fallbackTitle).trim().slice(0, 100) || fallbackTitle,
+      density: layout.density === 'compact' ? 'compact' : 'normal',
+      show_cover: layout.show_cover !== false,
+      show_signatures: layout.show_signatures !== false,
+      show_comments: layout.show_comments !== false,
+      show_evaluations: reportType === 'monthly' ? layout.show_evaluations !== false : layout.show_evaluations === true,
+      footer_text: String(layout.footer_text ?? `AIntern ${reportType === 'monthly' ? 'Monthly' : 'Weekly'} Report`).slice(0, 80),
+    },
+    sections: out,
+  };
+}
+
 function parseModelJson(text: string): Record<string, unknown> | null {
   const cleaned = text.trim().replace(/^```(json)?/i, '').replace(/```$/, '').trim();
   const start = cleaned.indexOf('{');
@@ -907,6 +998,101 @@ Deno.serve(async (req) => {
         return json({
           success: false,
           error: 'Could not read a form structure from that file. Try a clearer photo (whole page, good lighting) or a shorter excerpt.',
+        }, 422);
+      }
+
+      return json({ success: true, template: sanitized, tier: tier, provider: provider, extraction });
+    }
+
+    // ── import_period_report_structure: Weekly/Monthly sample → template JSON ──
+    if (action === 'import_period_report_structure') {
+      const reportType = String(body.report_type ?? '');
+      const mime = String(body.mime ?? '');
+      const b64 = String(body.file_base64 ?? '');
+      const requestedProvider = String(body.provider ?? 'openai');
+      const ALLOWED_MIMES = ['image/png', 'image/jpeg', 'image/webp', 'application/pdf'];
+      if (!['weekly', 'monthly'].includes(reportType)) {
+        return json({ success: false, error: 'Report type must be weekly or monthly.' }, 400);
+      }
+      if (!ALLOWED_MIMES.includes(mime)) {
+        return json({ success: false, error: 'Upload a PNG/JPG photo or a PDF of the report sample.' }, 400);
+      }
+      if (!b64 || b64.length > 8_000_000) {
+        return json({ success: false, error: 'File too large - keep it under ~5 MB.' }, 400);
+      }
+
+      const { data: cred } = await admin
+        .from('ai_credentials')
+        .select('provider, encrypted_key, model')
+        .eq('user_id', user.id)
+        .eq('provider', requestedProvider)
+        .maybeSingle();
+
+      let tier: 'byok' | 'bundled';
+      let provider: string;
+      let key: string;
+      let model: string | undefined;
+      if (cred?.encrypted_key) {
+        if (!ENC_SECRET) return json({ success: false, error: 'Server missing encryption secret' }, 500);
+        tier = 'byok';
+        provider = cred.provider;
+        key = await decrypt(cred.encrypted_key);
+        model = cred.model ?? undefined;
+      } else {
+        if (!PLATFORM_OPENAI_KEY) {
+          return json({ success: false, error: 'No AI key available. Add your own key in Profile → AI Assistant.' }, 402);
+        }
+        if (!(await hasActivePass(user.id))) {
+          return json({
+            success: false,
+            error: 'Bundled AI comes with the internship pass - activate a pass, or add your own key in Profile → AI Assistant.',
+            code: 'PASS_REQUIRED',
+          }, 402);
+        }
+        const used = await monthlyUsage(user.id);
+        if (used >= MONTHLY_CAP) {
+          return json({ success: false, error: `Monthly AI quota reached (${MONTHLY_CAP} tokens).` }, 429);
+        }
+        tier = 'bundled';
+        provider = 'openai';
+        key = PLATFORM_OPENAI_KEY;
+      }
+
+      let result: AiResult;
+      let extraction: 'text' | 'vision' = 'vision';
+      if (mime === 'application/pdf') {
+        const extracted = await extractPdfText(b64);
+        if (extracted.length > 200) {
+          extraction = 'text';
+          result = await PROVIDERS[provider](key, periodReportPrompt(reportType, 'text'), extracted.slice(0, 14000), 5000, model);
+        } else if (provider === 'openai') {
+          return json({
+            success: false,
+            error: 'This PDF looks scanned (no selectable text) and needs a Gemini or Claude key to read as an image - or upload a photo/screenshot instead.',
+          }, 400);
+        } else {
+          result = await VISION_PROVIDERS[provider](key, periodReportPrompt(reportType, 'vision'), mime, b64, 5000, model);
+        }
+      } else {
+        result = await VISION_PROVIDERS[provider](key, periodReportPrompt(reportType, 'vision'), mime, b64, 5000, model);
+      }
+
+      if (tier === 'bundled') {
+        await admin.from('ai_usage').insert({
+          user_id: user.id,
+          feature: 'period_report_template_import',
+          provider: provider,
+          tokens_in: result.tokensIn,
+          tokens_out: result.tokensOut,
+        });
+      }
+
+      const parsed = parseModelJson(result.text);
+      const sanitized = parsed ? sanitizePeriodReportStructure(parsed, reportType) : null;
+      if (!sanitized) {
+        return json({
+          success: false,
+          error: 'Could not read a weekly/monthly report structure from that file. Try a clearer photo/PDF or a shorter sample page.',
         }, 422);
       }
 

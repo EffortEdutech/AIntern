@@ -13,6 +13,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import InternShell from '../../components/layout/InternShell';
 import { useAuth } from '../../context/AuthContext';
+import { aiService } from '../../services/api/aiService';
 import { internshipService } from '../../services/api/internshipService';
 import { logbookService } from '../../services/api/logbookService';
 import { reportVersionService } from '../../services/api/reportVersionService';
@@ -20,11 +21,12 @@ import { useAccess } from '../../hooks/useAccess';
 import { resolveLayout } from '../../services/render/reportLayout';
 import { verificationOf } from '../../services/render/verification';
 import {
-  REPORT_TEMPLATE_OPTIONS,
   REPORT_TYPES,
   clampPeriodToInternship,
   currentMonthPeriod,
   currentWeekPeriod,
+  normalizePeriodReportTemplate,
+  reportTemplateOptions,
   reportTemplateToPdfTemplate,
   selectedReportTemplate,
   templateAsJson,
@@ -64,6 +66,15 @@ function initialPeriods(internship) {
   };
 }
 
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(',')[1] ?? '');
+    reader.onerror = () => reject(reader.error ?? new Error('Could not read file.'));
+    reader.readAsDataURL(file);
+  });
+}
+
 export default function ReportCenterPage() {
   const { profile } = useAuth();
   const toast = useToast();
@@ -77,6 +88,9 @@ export default function ReportCenterPage() {
   const [periods, setPeriods] = useState({});
   const [versions, setVersions] = useState({ weekly: [], monthly: [] });
   const [busy, setBusy] = useState(false);
+  const [provider, setProvider] = useState('gemini');
+  const [sampleFile, setSampleFile] = useState(null);
+  const [structureDraft, setStructureDraft] = useState(null);
 
   const loadVersions = async (internshipId) => {
     const [weekly, monthly] = await Promise.all([
@@ -116,6 +130,11 @@ export default function ReportCenterPage() {
     [internship, activeType],
   );
 
+  const templateOptions = useMemo(
+    () => reportTemplateOptions(internship, activeType),
+    [internship, activeType],
+  );
+
   const saveTemplate = async (templateId) => {
     if (!internship) return;
     const next = {
@@ -129,6 +148,64 @@ export default function ReportCenterPage() {
     if (res.success) {
       setInternship(res.data);
       toast.success('Report template saved.');
+    } else {
+      toast.error(res.error);
+    }
+  };
+
+  const extractSampleTemplate = async () => {
+    if (!sampleFile) {
+      toast.error('Choose a weekly or monthly sample report first.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const file_base64 = await fileToBase64(sampleFile);
+      const res = await aiService.importPeriodReportStructure(activeType, sampleFile.type, file_base64, provider);
+      if (!res.success) throw new Error(res.error);
+      const template = normalizePeriodReportTemplate({
+        ...res.template,
+        imported_at: new Date().toISOString(),
+      }, activeType);
+      setStructureDraft({
+        template,
+        meta: {
+          provider: res.provider,
+          tier: res.tier,
+          extraction: res.extraction,
+          filename: sampleFile.name,
+        },
+      });
+      toast.success('Sample extracted. Review the JSON before applying it.');
+    } catch (err) {
+      toast.error('Extraction failed: ' + err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const applyCustomTemplate = async () => {
+    if (!internship || !structureDraft?.template) return;
+    const currentDefs = internship.metadata?.report_template_defs?.[activeType];
+    const existing = Array.isArray(currentDefs) ? currentDefs : currentDefs ? [currentDefs] : [];
+    const nextTemplate = structureDraft.template;
+    const withoutSame = existing.filter((tpl) => tpl?.id !== nextTemplate.id);
+    const next = {
+      ...(internship.metadata ?? {}),
+      report_templates: {
+        ...(internship.metadata?.report_templates ?? {}),
+        [activeType]: nextTemplate.id,
+      },
+      report_template_defs: {
+        ...(internship.metadata?.report_template_defs ?? {}),
+        [activeType]: [nextTemplate, ...withoutSame].slice(0, 5),
+      },
+    };
+    const res = await internshipService.updateInternship(internship.id, { metadata: next });
+    if (res.success) {
+      setInternship(res.data);
+      setStructureDraft(null);
+      toast.success('Custom report template applied.');
     } else {
       toast.error(res.error);
     }
@@ -233,7 +310,11 @@ export default function ReportCenterPage() {
                 <button
                   key={type}
                   type="button"
-                  onClick={() => setActiveType(type)}
+                  onClick={() => {
+                    setActiveType(type);
+                    setSampleFile(null);
+                    setStructureDraft(null);
+                  }}
                   className={`rounded-lg border px-2 py-2 text-xs font-semibold ${
                     activeType === type
                       ? 'border-slate-900 bg-slate-900 text-white'
@@ -268,7 +349,7 @@ export default function ReportCenterPage() {
               ) : (
                 <>
                   <div className="space-y-2">
-                    {REPORT_TEMPLATE_OPTIONS[activeType].map((tpl) => (
+                    {templateOptions.map((tpl) => (
                       <button
                         key={tpl.id}
                         type="button"
@@ -279,10 +360,84 @@ export default function ReportCenterPage() {
                             : 'border-gray-200 hover:border-gray-300'
                         }`}
                       >
-                        <p className="text-sm font-semibold text-gray-900">{tpl.name}</p>
+                        <p className="text-sm font-semibold text-gray-900">
+                          {tpl.name}
+                          {tpl.custom && (
+                            <span className="ml-2 rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-sky-700">
+                              Custom
+                            </span>
+                          )}
+                        </p>
                         <p className="text-xs text-gray-500 mt-0.5">{tpl.description}</p>
                       </button>
                     ))}
+                  </div>
+
+                  <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3 space-y-3">
+                    <div>
+                      <p className="text-sm font-semibold text-gray-900">Import institution sample</p>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        Upload a PDF/photo of a {activeType} report. AI extracts structure only; you review sanitized JSON before applying.
+                      </p>
+                    </div>
+                    <div className="grid grid-cols-[1fr_auto] gap-2">
+                      <input
+                        type="file"
+                        accept="application/pdf,image/png,image/jpeg,image/webp"
+                        onChange={(e) => {
+                          setSampleFile(e.target.files?.[0] ?? null);
+                          setStructureDraft(null);
+                        }}
+                        className="w-full rounded-lg border border-gray-300 bg-white px-2 py-2 text-xs"
+                      />
+                      <select
+                        value={provider}
+                        onChange={(e) => setProvider(e.target.value)}
+                        className="rounded-lg border border-gray-300 bg-white px-2 py-2 text-xs"
+                        aria-label="AI provider"
+                      >
+                        <option value="gemini">Gemini</option>
+                        <option value="anthropic">Claude</option>
+                        <option value="openai">OpenAI</option>
+                      </select>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={extractSampleTemplate}
+                      disabled={busy || !sampleFile}
+                      className="w-full rounded-lg border border-slate-900 bg-white py-2.5 text-sm font-medium text-slate-900 hover:bg-slate-100 disabled:opacity-40"
+                    >
+                      Extract sample to JSON
+                    </button>
+                    {structureDraft && (
+                      <div className="space-y-2">
+                        <div className="flex flex-wrap gap-2 text-[11px] text-gray-500">
+                          <span className="rounded-full bg-white px-2 py-1 border border-gray-200">{structureDraft.meta.filename}</span>
+                          <span className="rounded-full bg-white px-2 py-1 border border-gray-200">{structureDraft.meta.provider}</span>
+                          <span className="rounded-full bg-white px-2 py-1 border border-gray-200">{structureDraft.meta.extraction}</span>
+                        </div>
+                        <pre className="max-h-64 overflow-auto rounded-lg bg-slate-950 p-3 text-[11px] leading-relaxed text-slate-100">
+                          {JSON.stringify(templateAsJson(structureDraft.template), null, 2)}
+                        </pre>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setStructureDraft(null)}
+                            className="rounded-lg border border-gray-300 py-2 text-sm font-medium text-gray-700"
+                          >
+                            Discard
+                          </button>
+                          <button
+                            type="button"
+                            onClick={applyCustomTemplate}
+                            disabled={busy}
+                            className="rounded-lg bg-emerald-600 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-40"
+                          >
+                            Apply custom template
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-2 gap-2">

@@ -130,13 +130,97 @@ export const DEFAULT_TEMPLATE_BY_TYPE = {
   [REPORT_TYPES.FINAL]: 'final_default',
 };
 
+const PERIOD_SECTION_KINDS = new Set([
+  'profile_info',
+  'period_summary',
+  'computed_summary',
+  'auto_entries_narrative',
+  'auto_entries_table',
+  'narrative',
+  'comments_table',
+  'auto_evaluations',
+  'signature',
+]);
+
+function slug(input, fallback) {
+  const s = String(input ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 40);
+  return s || fallback;
+}
+
+export function normalizePeriodReportTemplate(raw, reportType) {
+  const type = reportType === REPORT_TYPES.MONTHLY ? REPORT_TYPES.MONTHLY : REPORT_TYPES.WEEKLY;
+  const fallback = STANDARD_REPORT_TEMPLATES[DEFAULT_TEMPLATE_BY_TYPE[type]];
+  const id = slug(raw?.id ?? raw?.template_id ?? raw?.name ?? raw?.report_title, `custom_${type}`);
+  const name = String(raw?.name ?? raw?.report_title ?? `Custom ${type} report`)
+    .trim()
+    .slice(0, 80) || fallback.name;
+  const layout = raw?.layout && typeof raw.layout === 'object' ? raw.layout : {};
+  const sections = Array.isArray(raw?.sections) ? raw.sections : [];
+  const seen = new Set();
+  const cleanSections = sections.slice(0, 12).map((section, index) => {
+    const title = String(section?.title ?? '').trim().slice(0, 100);
+    if (!title) return null;
+    let sid = slug(section?.id ?? title, `section_${index + 1}`);
+    while (seen.has(sid)) sid += '_x';
+    seen.add(sid);
+    const kind = PERIOD_SECTION_KINDS.has(section?.kind) ? section.kind : 'narrative';
+    return {
+      id: sid,
+      title,
+      kind,
+      source: String(section?.source ?? '').trim().slice(0, 120) || 'custom_template',
+    };
+  }).filter(Boolean);
+
+  return {
+    id: id.startsWith('custom_') ? id : `custom_${type}_${id}`,
+    report_type: type,
+    name,
+    description: String(raw?.description ?? 'Imported from an institution sample report.').slice(0, 140),
+    custom: true,
+    imported_at: raw?.imported_at ?? new Date().toISOString(),
+    layout: {
+      ...fallback.layout,
+      title: String(layout.title ?? raw?.report_title ?? fallback.layout.title).trim().slice(0, 100) || fallback.layout.title,
+      density: layout.density === 'compact' ? 'compact' : 'normal',
+      show_cover: layout.show_cover !== false,
+      show_signatures: layout.show_signatures !== false,
+      show_comments: layout.show_comments !== false,
+      show_evaluations: type === REPORT_TYPES.MONTHLY ? layout.show_evaluations !== false : layout.show_evaluations === true,
+      footer_text: layout.footer_text ? String(layout.footer_text).slice(0, 80) : fallback.layout.footer_text,
+    },
+    sections: cleanSections.length ? cleanSections : fallback.sections,
+  };
+}
+
+export function customReportTemplates(internship, reportType) {
+  const defs = internship?.metadata?.report_template_defs?.[reportType];
+  if (!defs) return [];
+  const list = Array.isArray(defs) ? defs : [defs];
+  return list.map((tpl) => normalizePeriodReportTemplate(tpl, reportType));
+}
+
+export function reportTemplateOptions(internship, reportType) {
+  return [
+    ...(REPORT_TEMPLATE_OPTIONS[reportType] ?? []),
+    ...customReportTemplates(internship, reportType),
+  ];
+}
+
 export function selectedTemplateId(internship, reportType) {
   return internship?.metadata?.report_templates?.[reportType]
     ?? DEFAULT_TEMPLATE_BY_TYPE[reportType];
 }
 
 export function selectedReportTemplate(internship, reportType) {
-  return STANDARD_REPORT_TEMPLATES[selectedTemplateId(internship, reportType)]
+  const selectedId = selectedTemplateId(internship, reportType);
+  const custom = customReportTemplates(internship, reportType).find((tpl) => tpl.id === selectedId);
+  return custom
+    ?? STANDARD_REPORT_TEMPLATES[selectedId]
     ?? STANDARD_REPORT_TEMPLATES[DEFAULT_TEMPLATE_BY_TYPE[reportType]];
 }
 

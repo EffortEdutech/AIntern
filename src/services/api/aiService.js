@@ -83,6 +83,13 @@ export const aiService = {
    */
   importReportStructure: (mime, file_base64, provider = 'gemini') =>
     call({ action: 'import_report_structure', mime, file_base64, provider }),
+
+  /**
+   * Report Center: extract a Weekly/Monthly report template from an uploaded
+   * institution sample, returning sanitized JSON for user review.
+   */
+  importPeriodReportStructure: (report_type, mime, file_base64, provider = 'gemini') =>
+    call({ action: 'import_period_report_structure', report_type, mime, file_base64, provider }),
 };
 
 export default aiService;
