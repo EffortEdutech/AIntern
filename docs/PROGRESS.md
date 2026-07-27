@@ -2,7 +2,7 @@
 
 <!-- Session 6 review addendum appended July 10, 2026 — see below -->
 
-**Last Updated:** July 12, 2026 — Phase 4 S13 monetization built; PDF-import upgrade track (Phase A / A.2 / B) built
+**Last Updated:** July 27, 2026 — Report Center foundation built (Weekly / Monthly / Final standard templates)
 
 ## 📊 OVERALL STATUS
 
@@ -22,6 +22,7 @@
 | **PDF-import track — Phase A.2** | Per-field visibility + repeatable "Tasks Performed" | ✅ User-verified |
 | **PDF-import track — Phase B** | Full training-report import (chapter-based final report) | ✅ Built, awaiting user e2e |
 | **PDF-import track — Phase B hotfix** | Gemini model deprecation fix + live per-provider model picker (v11) | ✅ Built, awaiting user e2e |
+| **Report Center foundation** | Standard Weekly / Monthly / Final report templates | ✅ Built, awaiting user e2e |
 
 ---
 
@@ -577,3 +578,44 @@ as appendix chapters, and the same immutable-snapshot + Verification Appendix
 2. Tap "Change" next to that key → confirm a live list of models loads (not a hardcoded guess) → pick one → confirm it saves.
 3. Final Report → Report Studio → "Extract chapter structure" → confirm it now uses the chosen model and succeeds.
 4. If Google (or another provider) deprecates the picked model again later, repeat step 2 — no code change or redeploy needed.
+
+---
+
+### Report Center foundation - Weekly / Monthly / Final standard templates built
+**Date:** July 27, 2026
+
+**Trigger:** user clarified the official report offering should be three report families: Weekly, Monthly, and Final. Weekly must let the intern choose either a narrative report or a table report. Monthly should combine data tables with narrative reflections. Final continues as the chapter-based training report.
+
+#### New / changed
+- `src/services/render/reportTemplates.js` (new) - standard JSON template library:
+  - `weekly_narrative`: profile info, weekly overview, approved daily activity narrative, skills learned, problems/solutions, supervisor verification.
+  - `weekly_table`: profile info, approved activity table, hours/attendance summary, supervisor comments, supervisor verification.
+  - `monthly_combined`: monthly summary, approved activity table, reflection, skills growth, supervisor evaluation summary, next-month plan, verification.
+  - `final_default`: chapter-based final report reference structure aligned with the existing Final Report Studio.
+- `src/pages/report/ReportCenterPage.jsx` (new, `/reports`) - mobile-first Report Center:
+  - tabs for Weekly, Monthly, Final;
+  - Weekly template selector (Narrative or Table);
+  - Monthly fixed Combined template;
+  - active JSON template preview;
+  - period start/end controls for Weekly/Monthly;
+  - official Weekly/Monthly version creation through the existing `report_versions` / `create_report_snapshot()` pipeline;
+  - PDF and Word export for frozen Weekly/Monthly versions;
+  - Final tab links into the existing `/final-report` chapter studio.
+- `src/router.jsx` - added authenticated `/reports` route.
+- `src/pages/intern/InternHome.jsx` - Home now links to "Report Center" instead of only "Final training report."
+
+#### Architecture notes
+- No new production dependencies.
+- No trust-model changes: approved snapshots, evaluations, report versions, Verification IDs, QR, and `/verify` stay as the authority.
+- User report-template selection is saved in `internships.metadata.report_templates`; the JSON template controls structure/presentation only.
+- Institution sample upload/generate remains the next step for Weekly/Monthly. Final already has Report Studio upload/extract.
+
+#### User test path
+1. Home -> Report Center.
+2. Weekly -> choose "Weekly Narrative Report" -> confirm JSON changes -> set week period -> Create official weekly report -> export PDF/Word.
+3. Weekly -> choose "Weekly Table Report" -> create another official weekly report -> export PDF/Word.
+4. Monthly -> confirm "Monthly Combined Report" JSON -> set month period -> Create official monthly report -> export PDF/Word.
+5. Final -> Open Final Report Studio -> confirm existing chapter workflow still works.
+
+#### Next
+- Add Weekly/Monthly sample-report upload -> AI extraction -> sanitized JSON review -> apply as custom report template, matching the existing Final Report Studio pattern.

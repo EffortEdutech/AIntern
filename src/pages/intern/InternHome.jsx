@@ -207,17 +207,17 @@ export default function InternHome() {
               </div>
             </Link>
 
-            {/* ── Final Report (Phase B) ── */}
+            {/* ── Report Center (weekly/monthly/final) ── */}
             <Link
-              to="/final-report"
+              to="/reports"
               className="block bg-white rounded-xl border border-gray-200 p-5 hover:border-gray-300 transition-colors"
             >
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="font-semibold text-gray-900">Final training report</h3>
+                  <h3 className="font-semibold text-gray-900">Report Center</h3>
                   <p className="text-sm text-gray-500 mt-0.5">
-                    Write narrative chapters or import your university's format — the
-                    logbook and evaluations appendices are added automatically.
+                    Build weekly, monthly, and final reports from standard or
+                    institution-matched templates.
                   </p>
                 </div>
                 <span className="text-gray-300 text-xl">›</span>
