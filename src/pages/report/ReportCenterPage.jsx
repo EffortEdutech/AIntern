@@ -10,9 +10,10 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import InternShell from '../../components/layout/InternShell';
 import Modal from '../../components/common/Modal';
+import ReportBreadcrumb from '../../components/report/ReportBreadcrumb';
 import { PeriodReportTemplatePreview } from '../../components/report/ReportTemplatePreview';
 import { useAuth } from '../../context/AuthContext';
 import { aiService } from '../../services/api/aiService';
@@ -97,6 +98,7 @@ export default function ReportCenterPage() {
   const { profile } = useAuth();
   const toast = useToast();
   const { access } = useAccess();
+  const [searchParams, setSearchParams] = useSearchParams();
   const passLocked = access ? !access.active : false;
 
   const [internship, setInternship] = useState(null);
@@ -119,6 +121,13 @@ export default function ReportCenterPage() {
   const [v2TemplateId, setV2TemplateId] = useState(null);
   const [fieldPrefsSaving, setFieldPrefsSaving] = useState(false);
   const [multiTaskSaving, setMultiTaskSaving] = useState(false);
+
+  useEffect(() => {
+    const tab = searchParams.get('tab');
+    const nextTab = REPORT_TABS.includes(tab) ? tab : 'settings';
+    setActiveTab(nextTab);
+    if (nextTab !== 'settings') setActiveType(nextTab);
+  }, [searchParams]);
 
   const loadDailyTemplate = async (itn) => {
     const tpl = await dailyLogService.getDailyTemplate(itn);
@@ -409,11 +418,7 @@ export default function ReportCenterPage() {
           </div>
         ) : (
           <>
-            <nav className="flex items-center gap-1 text-xs text-gray-500" aria-label="Breadcrumb">
-              <span>Report</span>
-              <span>/</span>
-              <span className="font-semibold text-gray-900">{REPORT_META[activeTab].label}</span>
-            </nav>
+            <ReportBreadcrumb items={[{ label: REPORT_META[activeTab].label }]} />
 
             <div className="grid grid-cols-4 gap-2">
               {REPORT_TABS.map((tab) => (
@@ -423,6 +428,7 @@ export default function ReportCenterPage() {
                   onClick={() => {
                     setActiveTab(tab);
                     if (tab !== 'settings') setActiveType(tab);
+                    setSearchParams(tab === 'settings' ? {} : { tab });
                     setSampleFile(null);
                     setStructureDraft(null);
                   }}
@@ -469,19 +475,6 @@ export default function ReportCenterPage() {
                     <span>
                       <span className="block text-sm font-semibold text-gray-900">Daily log Template Studio</span>
                       <span className="block text-xs text-gray-500">Import your institution daily log form.</span>
-                    </span>
-                  </span>
-                  <span className="text-gray-300 text-xl">{'>'}</span>
-                </Link>
-                <Link
-                  to="/final-report"
-                  className="flex items-center justify-between rounded-lg border border-gray-200 px-3 py-3 hover:border-gray-300"
-                >
-                  <span className="flex items-center gap-2">
-                    <ClipboardDocumentCheckIcon className="w-5 h-5 text-slate-700" />
-                    <span>
-                      <span className="block text-sm font-semibold text-gray-900">Final Report Studio</span>
-                      <span className="block text-xs text-gray-500">Chapters, narrative draft, official final versions.</span>
                     </span>
                   </span>
                   <span className="text-gray-300 text-xl">{'>'}</span>
@@ -634,14 +627,16 @@ export default function ReportCenterPage() {
                 <div className="space-y-3">
                   <div className="rounded-lg border border-gray-200 p-3">
                     <p className="text-sm font-medium text-gray-900">{selectedTemplate.name}</p>
-                    <p className="text-xs text-gray-500 mt-1">{selectedTemplate.description}</p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Final reports are chapter-based: first import or choose a chapter structure, then write narrative chapters, then create the official final version.
+                    </p>
                   </div>
                   <Link
                     to="/final-report"
                     className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-slate-900 py-3 text-sm font-medium text-white hover:bg-slate-700"
                   >
                     <SparklesIcon className="w-4 h-4" />
-                    Open Final Report Studio
+                    Continue final report workflow
                   </Link>
                 </div>
               ) : (
@@ -781,30 +776,24 @@ export default function ReportCenterPage() {
               )}
             </section>
 
+            {activeType !== REPORT_TYPES.FINAL && (
             <section className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
               <div className="flex items-center gap-2">
                 <CalendarDaysIcon className="w-5 h-5 text-slate-700" />
                 <h2 className="font-semibold text-gray-900">Active template preview</h2>
               </div>
               <p className="text-xs text-gray-500">
-                {activeType === REPORT_TYPES.FINAL
-                  ? 'Final report structure is managed in the Final Report Studio.'
-                  : `Current period: ${periodLabel(period)}`}
+                Current period: {periodLabel(period)}
               </p>
-              {activeType === REPORT_TYPES.FINAL ? (
-                <Link to="/final-report" className="inline-flex w-full items-center justify-center rounded-lg border border-gray-300 py-2.5 text-sm font-medium text-gray-700">
-                  Open Final Report Studio
-                </Link>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setShowActivePreview(true)}
-                  className="w-full rounded-lg border border-gray-300 bg-white py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
-                >
-                  Preview current template
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => setShowActivePreview(true)}
+                className="w-full rounded-lg border border-gray-300 bg-white py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Preview current template
+              </button>
             </section>
+            )}
 
             {activeType !== REPORT_TYPES.FINAL && (
               <section className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">

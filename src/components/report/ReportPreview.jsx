@@ -11,6 +11,7 @@
 
 import { accentCss } from '../../services/render/reportLayout';
 import { fieldRows as buildFieldRows } from '../../services/render/fieldRows';
+import ReportBreadcrumb from './ReportBreadcrumb';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 
 const RUBRIC_LABELS = {
@@ -31,7 +32,7 @@ function fieldRows(data, template) {
   }));
 }
 
-export default function ReportPreview({ model, layout, label = 'Preview', onClose }) {
+export default function ReportPreview({ model, layout, label = 'Preview', breadcrumbItems = [], onClose }) {
   const accent = accentCss(layout.accent);
   const compact = layout.density === 'compact';
   const entries = model.entries ?? [];
@@ -40,7 +41,12 @@ export default function ReportPreview({ model, layout, label = 'Preview', onClos
   return (
     <div className="fixed inset-0 z-50 bg-gray-100 overflow-y-auto">
       {/* Toolbar */}
-      <div className="sticky top-0 z-10 bg-slate-900 text-white px-4 py-3 flex items-center justify-between">
+      <div className="sticky top-0 z-10 bg-slate-900 text-white px-4 py-3 flex items-center justify-between gap-3">
+        {breadcrumbItems.length > 0 && (
+          <div className="[&_a]:text-slate-200 [&_a:hover]:text-white [&_span]:text-slate-300 [&_span:last-child]:text-white">
+            <ReportBreadcrumb items={breadcrumbItems} />
+          </div>
+        )}
         <span className="text-sm font-medium">👁 {label} — HTML preview</span>
         <button onClick={onClose} aria-label="Close preview" className="p-1.5 rounded-md hover:bg-slate-700">
           <XMarkIcon className="w-5 h-5" />

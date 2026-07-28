@@ -15,6 +15,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import InternShell from '../../components/layout/InternShell';
+import ReportBreadcrumb from '../../components/report/ReportBreadcrumb';
 import { internshipService } from '../../services/api/internshipService';
 import { templateStudioService } from '../../services/api/templateStudioService';
 import { useToast } from '../../context/ToastContext';
@@ -84,6 +85,8 @@ export default function TemplateStudioPage() {
   return (
     <InternShell title="Template Studio">
       <div className="p-4 space-y-4">
+        <ReportBreadcrumb items={[{ label: 'Settings', to: '/reports' }, { label: 'Daily log Template Studio' }]} />
+
         <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-3">
           <div className="flex items-center gap-2">
             <SparklesIcon className="w-5 h-5 text-slate-700" />

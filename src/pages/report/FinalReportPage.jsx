@@ -16,6 +16,7 @@
 import { useEffect, useRef, useState } from 'react';
 import InternShell from '../../components/layout/InternShell';
 import Modal from '../../components/common/Modal';
+import ReportBreadcrumb from '../../components/report/ReportBreadcrumb';
 import { FinalReportStructurePreview } from '../../components/report/ReportTemplatePreview';
 import { useAuth } from '../../context/AuthContext';
 import { internshipService } from '../../services/api/internshipService';
@@ -220,6 +221,8 @@ export default function FinalReportPage() {
   return (
     <InternShell title="Final Report">
       <div className="p-4 space-y-4">
+        <ReportBreadcrumb items={[{ label: 'Final', to: '/reports?tab=final' }, { label: 'Final Report Studio' }]} />
+
         <div className="flex items-start gap-2 text-xs text-gray-500 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
           <ClipboardDocumentCheckIcon className="w-4 h-4 text-emerald-600 mt-0.5 shrink-0" />
           <span>

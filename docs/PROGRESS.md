@@ -2,7 +2,7 @@
 
 <!-- Session 6 review addendum appended July 10, 2026 — see below -->
 
-**Last Updated:** July 28, 2026 - Report Center tabs and breadcrumb polish
+**Last Updated:** July 28, 2026 - Report breadcrumb coverage and Final flow polish
 
 ## 📊 OVERALL STATUS
 
@@ -23,7 +23,7 @@
 | **PDF-import track — Phase B** | Full training-report import (chapter-based final report) | ✅ Built, awaiting user e2e |
 | **PDF-import track — Phase B hotfix** | Gemini model deprecation fix + live per-provider model picker (v11) | ✅ Built, awaiting user e2e |
 | **Report Center** | Standard templates + Weekly/Monthly sample upload → visual preview → custom template apply + frozen official template metadata | ✅ Built, awaiting user e2e |
-| **Report UX polish** | Bottom Report tab + consolidated Report Center settings/templates workspace + Report/Settings/Weekly/Monthly/Final tabs | ✅ Built |
+| **Report UX polish** | Bottom Report tab + consolidated Report Center settings/templates workspace + breadcrumbs across report pages + clearer Final flow | ✅ Built |
 
 ---
 
@@ -798,11 +798,15 @@ npx --yes supabase@latest db query --linked "select position('final_report_title
 #### New / changed
 - `src/components/layout/InternShell.jsx` - bottom navigation is now `Home / Log / History / Report / Profile`, with `Report` opening `/reports`.
 - `src/pages/report/ReportCenterPage.jsx` - added `Settings / Weekly / Monthly / Final` tabs with breadcrumb context (`Report / Settings`, `Report / Weekly`, `Report / Monthly`, `Report / Final`).
+- `src/pages/report/ReportCenterPage.jsx` - tab URLs now support `?tab=weekly`, `?tab=monthly`, and `?tab=final`, so breadcrumbs return to the correct report tab.
 - `src/pages/report/ReportCenterPage.jsx` - moved the consolidated Reporting workspace into the Settings tab:
-  - quick access to Official logbook, Daily log Template Studio, and Final Report Studio;
+  - quick access to Official logbook and Daily log Template Studio;
   - report style settings moved here from Profile;
   - daily log format controls moved here from Profile, including multi-task opt-in and field visibility;
   - Weekly/Monthly sample extraction wording now points users to visual preview instead of JSON-first review.
+- `src/pages/report/ReportCenterPage.jsx` - Final tab now has one clear entry into the chapter-based final workflow instead of duplicate links to `/final-report`.
+- `src/components/report/ReportBreadcrumb.jsx` - shared report breadcrumb component.
+- `src/pages/logbook/LogbookPage.jsx`, `src/pages/studio/TemplateStudioPage.jsx`, `src/pages/report/FinalReportPage.jsx`, and `src/components/report/ReportPreview.jsx` - added report breadcrumb context to the linked report pages and live HTML preview.
 - `src/pages/intern/InternProfile.jsx` - Profile now focuses on personal details, internship pass, supervisor review settings, and AI keys only.
 
 #### Architecture notes
@@ -815,8 +819,11 @@ npx --yes supabase@latest db query --linked "select position('final_report_title
 2. Confirm the breadcrumb reads `Report / Settings` and shared settings are shown only there.
 3. Switch to Weekly -> confirm breadcrumb reads `Report / Weekly` and the Weekly workflow appears without the Settings cards.
 4. Switch to Monthly -> confirm breadcrumb reads `Report / Monthly` and the Monthly workflow appears without the Settings cards.
-5. Switch to Final -> confirm breadcrumb reads `Report / Final` and the Final Report Studio entry appears without the Settings cards.
-6. Settings -> open Daily log Template Studio and Final Report Studio.
-7. Settings -> change report title/accent/toggles -> confirm saved toast.
-8. Settings -> Daily log format -> toggle multiple tasks and field visibility.
-9. Profile -> confirm report style, logbook format, daily field controls, and Template Studio link are no longer shown.
+5. Switch to Final -> confirm breadcrumb reads `Report / Final`, only one final workflow button appears, and there is no duplicate active-preview link.
+6. Settings -> open Official logbook -> confirm breadcrumb reads `Report / Settings / Official logbook`.
+7. Official logbook -> Live preview (HTML) -> confirm preview toolbar carries report breadcrumb context.
+8. Settings -> open Daily log Template Studio -> confirm breadcrumb reads `Report / Settings / Daily log Template Studio`.
+9. Final tab -> Continue final report workflow -> confirm breadcrumb reads `Report / Final / Final Report Studio`.
+10. Settings -> change report title/accent/toggles -> confirm saved toast.
+11. Settings -> Daily log format -> toggle multiple tasks and field visibility.
+12. Profile -> confirm report style, logbook format, daily field controls, and Template Studio link are no longer shown.

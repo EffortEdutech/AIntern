@@ -24,6 +24,7 @@ import { aiService } from '../../services/api/aiService';
 import { useAccess } from '../../hooks/useAccess';
 import { resolveLayout } from '../../services/render/reportLayout';
 import { verificationOf } from '../../services/render/verification';
+import ReportBreadcrumb from '../../components/report/ReportBreadcrumb';
 import ReportPreview from '../../components/report/ReportPreview';
 import { useToast } from '../../context/ToastContext';
 import {
@@ -253,6 +254,8 @@ export default function LogbookPage() {
   return (
     <InternShell title="Logbook">
       <div className="p-4 space-y-4">
+        <ReportBreadcrumb items={[{ label: 'Settings', to: '/reports' }, { label: 'Official logbook' }]} />
+
         <div className="flex items-start gap-2 text-xs text-gray-500 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
           <ShieldCheckIcon className="w-4 h-4 text-emerald-600 mt-0.5 shrink-0" />
           <span>
@@ -536,6 +539,7 @@ export default function LogbookPage() {
           model={preview.model}
           layout={preview.layout}
           label={preview.label}
+          breadcrumbItems={[{ label: 'Settings', to: '/reports' }, { label: 'Official logbook' }, { label: preview.label }]}
           onClose={() => setPreview(null)}
         />
       )}
