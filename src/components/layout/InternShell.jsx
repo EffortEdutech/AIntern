@@ -16,6 +16,7 @@ import {
   HomeIcon,
   PencilSquareIcon,
   ClockIcon,
+  DocumentTextIcon,
   UserCircleIcon,
   ArrowRightOnRectangleIcon,
 } from '@heroicons/react/24/outline';
@@ -26,6 +27,7 @@ const NAV_ITEMS = [
   { to: '/', label: 'Home', icon: HomeIcon, end: true },
   { to: '/log', label: 'Log', icon: PencilSquareIcon },
   { to: '/history', label: 'History', icon: ClockIcon },
+  { to: '/reports', label: 'Report', icon: DocumentTextIcon },
   { to: '/profile', label: 'Profile', icon: UserCircleIcon },
 ];
 
@@ -60,7 +62,7 @@ export function InternShell({ title = 'AIntern', children }) {
 
       {/* Bottom navigation */}
       <nav className="fixed bottom-0 inset-x-0 z-20 bg-white border-t border-gray-200 max-w-md mx-auto">
-        <div className="grid grid-cols-4">
+        <div className="grid grid-cols-5">
           {NAV_ITEMS.map(({ to, label, icon: Icon, end }) => (
             <NavLink
               key={to}

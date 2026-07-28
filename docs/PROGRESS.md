@@ -2,7 +2,7 @@
 
 <!-- Session 6 review addendum appended July 10, 2026 — see below -->
 
-**Last Updated:** July 27, 2026 — Visual template preview added for extracted reports
+**Last Updated:** July 28, 2026 - Report navigation and settings consolidated
 
 ## 📊 OVERALL STATUS
 
@@ -23,6 +23,7 @@
 | **PDF-import track — Phase B** | Full training-report import (chapter-based final report) | ✅ Built, awaiting user e2e |
 | **PDF-import track — Phase B hotfix** | Gemini model deprecation fix + live per-provider model picker (v11) | ✅ Built, awaiting user e2e |
 | **Report Center** | Standard templates + Weekly/Monthly sample upload → visual preview → custom template apply + frozen official template metadata | ✅ Built, awaiting user e2e |
+| **Report UX polish** | Bottom Report tab + consolidated Report Center settings/templates workspace | ✅ Built |
 
 ---
 
@@ -793,3 +794,32 @@ npx --yes supabase@latest db query --linked "select position('final_report_title
 5. Apply custom template -> click `Preview current template` -> confirm the active template is shown visually.
 6. Final Report Studio -> upload final report/TOC sample -> Extract chapter structure.
 7. Confirm a visual table-of-contents preview opens before applying.
+
+---
+
+### Report navigation polish - consolidated reporting workspace
+**Date:** July 28, 2026
+
+**Trigger:** user feedback that Report Center, Report Studio, Template Studio, Home quick links, and Profile/settings created a scattered reporting experience.
+
+#### New / changed
+- `src/components/layout/InternShell.jsx` - bottom navigation is now `Home / Log / History / Report / Profile`, with `Report` opening `/reports`.
+- `src/pages/report/ReportCenterPage.jsx` - added a consolidated Reporting workspace:
+  - quick access to Official logbook, Daily log Template Studio, and Final Report Studio;
+  - report style settings moved here from Profile;
+  - daily log format controls moved here from Profile, including multi-task opt-in and field visibility;
+  - Weekly/Monthly sample extraction wording now points users to visual preview instead of JSON-first review.
+- `src/pages/intern/InternProfile.jsx` - Profile now focuses on personal details, internship pass, supervisor review settings, and AI keys only.
+
+#### Architecture notes
+- No schema changes and no new dependencies.
+- No trust-model changes: report style and template settings remain presentation/form metadata only.
+- Official snapshots, evaluations, report versions, Verification IDs, QR, and `/verify` remain unchanged.
+
+#### User test path
+1. Bottom nav -> Report -> confirm Report Center opens.
+2. Home -> Report Center -> confirm it still opens `/reports`.
+3. Report Center -> Reporting workspace -> open Daily log Template Studio and Final Report Studio.
+4. Report Center -> change report title/accent/toggles -> confirm saved toast.
+5. Report Center -> Daily log format -> toggle multiple tasks and field visibility.
+6. Profile -> confirm report style, logbook format, daily field controls, and Template Studio link are no longer shown.

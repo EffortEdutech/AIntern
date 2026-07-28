@@ -16,11 +16,12 @@ import Modal from '../../components/common/Modal';
 import { PeriodReportTemplatePreview } from '../../components/report/ReportTemplatePreview';
 import { useAuth } from '../../context/AuthContext';
 import { aiService } from '../../services/api/aiService';
+import { dailyLogService, DAILY_TEMPLATE_ID_V2 } from '../../services/api/dailyLogService';
 import { internshipService } from '../../services/api/internshipService';
 import { logbookService } from '../../services/api/logbookService';
 import { reportVersionService } from '../../services/api/reportVersionService';
 import { useAccess } from '../../hooks/useAccess';
-import { resolveLayout } from '../../services/render/reportLayout';
+import { ACCENT_CHOICES, LAYOUT_DEFAULTS, resolveLayout } from '../../services/render/reportLayout';
 import { verificationOf } from '../../services/render/verification';
 import {
   REPORT_TYPES,
@@ -37,7 +38,7 @@ import {
 import { useToast } from '../../context/ToastContext';
 import {
   CalendarDaysIcon, ClipboardDocumentCheckIcon, DocumentArrowDownIcon,
-  DocumentTextIcon, SparklesIcon,
+  DocumentTextIcon, SparklesIcon, SwatchIcon, TableCellsIcon,
 } from '@heroicons/react/24/outline';
 
 const REPORT_META = {
@@ -56,6 +57,9 @@ const REPORT_META = {
 };
 
 const DATE_FMT = new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+const inputCls =
+  'w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-800 focus:border-transparent';
+const labelCls = 'block text-sm font-medium text-gray-700 mb-1';
 
 function periodLabel(period) {
   if (!period?.start || !period?.end) return '';
@@ -96,6 +100,18 @@ export default function ReportCenterPage() {
   const [structureDraft, setStructureDraft] = useState(null);
   const [showDraftPreview, setShowDraftPreview] = useState(false);
   const [showActivePreview, setShowActivePreview] = useState(false);
+  const [prefs, setPrefs] = useState({});
+  const [prefsSaving, setPrefsSaving] = useState(false);
+  const [dailyTemplate, setDailyTemplate] = useState(null);
+  const [hiddenFields, setHiddenFields] = useState([]);
+  const [v2TemplateId, setV2TemplateId] = useState(null);
+  const [fieldPrefsSaving, setFieldPrefsSaving] = useState(false);
+  const [multiTaskSaving, setMultiTaskSaving] = useState(false);
+
+  const loadDailyTemplate = async (itn) => {
+    const tpl = await dailyLogService.getDailyTemplate(itn);
+    if (tpl.success) setDailyTemplate(tpl.data);
+  };
 
   const loadVersions = async (internshipId) => {
     const [weekly, monthly] = await Promise.all([
@@ -119,6 +135,9 @@ export default function ReportCenterPage() {
         setSnapshots([]);
         return;
       }
+      setPrefs(itn.metadata?.report_prefs ?? {});
+      setHiddenFields(itn.metadata?.field_prefs?.hidden ?? []);
+      await loadDailyTemplate(itn);
       const [logbook] = await Promise.all([
         logbookService.getLogbook(itn.id),
         loadVersions(itn.id),
@@ -127,6 +146,9 @@ export default function ReportCenterPage() {
       setSnapshots(logbook.success ? logbook.snapshots : []);
       setEvaluations(logbook.success ? logbook.evaluations : []);
     })();
+    dailyLogService.getTemplateByKey(DAILY_TEMPLATE_ID_V2).then((tpl) => {
+      if (tpl) setV2TemplateId(tpl.id);
+    });
     return () => { mounted = false; };
   }, []);
 
@@ -153,6 +175,62 @@ export default function ReportCenterPage() {
     if (res.success) {
       setInternship(res.data);
       toast.success('Report template saved.');
+    } else {
+      toast.error(res.error);
+    }
+  };
+
+  const savePrefs = async (next) => {
+    if (!internship) return;
+    setPrefs(next);
+    setPrefsSaving(true);
+    const res = await internshipService.updateInternship(internship.id, {
+      metadata: { ...(internship.metadata ?? {}), report_prefs: next },
+    });
+    setPrefsSaving(false);
+    if (res.success) {
+      setInternship(res.data);
+      toast.success('Report style saved.');
+    } else {
+      toast.error(res.error);
+    }
+  };
+
+  const toggleFieldVisibility = async (path) => {
+    if (!internship) return;
+    const previous = hiddenFields;
+    const next = hiddenFields.includes(path)
+      ? hiddenFields.filter((p) => p !== path)
+      : [...hiddenFields, path];
+    setHiddenFields(next);
+    setFieldPrefsSaving(true);
+    const res = await internshipService.updateInternship(internship.id, {
+      metadata: { ...(internship.metadata ?? {}), field_prefs: { hidden: next } },
+    });
+    setFieldPrefsSaving(false);
+    if (res.success) {
+      setInternship(res.data);
+    } else {
+      setHiddenFields(previous);
+      toast.error(res.error);
+    }
+  };
+
+  const usingCustomTemplate = Boolean(
+    internship?.daily_template_id && internship.daily_template_id !== v2TemplateId
+  );
+  const usingMultiTask = Boolean(v2TemplateId && internship?.daily_template_id === v2TemplateId);
+
+  const toggleMultiTask = async () => {
+    if (!internship || !v2TemplateId) return;
+    const nextId = usingMultiTask ? null : v2TemplateId;
+    setMultiTaskSaving(true);
+    const res = await internshipService.updateInternship(internship.id, { daily_template_id: nextId });
+    setMultiTaskSaving(false);
+    if (res.success) {
+      setInternship(res.data);
+      await loadDailyTemplate(res.data);
+      toast.success(nextId ? 'Multiple tasks per day enabled.' : 'Back to one task per day.');
     } else {
       toast.error(res.error);
     }
@@ -309,7 +387,7 @@ export default function ReportCenterPage() {
           <ClipboardDocumentCheckIcon className="w-4 h-4 text-slate-700 mt-0.5 shrink-0" />
           <span>
             Standard report templates are live. Uploaded institution samples
-            will generate the same JSON structure before being applied.
+            open as a visual preview before you apply them.
           </span>
         </div>
 
@@ -339,6 +417,189 @@ export default function ReportCenterPage() {
                 </button>
               ))}
             </div>
+
+            <section className="bg-white rounded-xl border border-gray-200 p-4 space-y-4">
+              <div>
+                <h2 className="font-semibold text-gray-900">Reporting workspace</h2>
+                <p className="text-sm text-gray-500 mt-0.5">
+                  Report templates, daily log format, style, exports, and final report studio are managed here.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 gap-2">
+                <Link
+                  to="/logbook"
+                  className="flex items-center justify-between rounded-lg border border-gray-200 px-3 py-3 hover:border-gray-300"
+                >
+                  <span className="flex items-center gap-2">
+                    <DocumentTextIcon className="w-5 h-5 text-slate-700" />
+                    <span>
+                      <span className="block text-sm font-semibold text-gray-900">Official logbook</span>
+                      <span className="block text-xs text-gray-500">Approved snapshots and evaluation exports.</span>
+                    </span>
+                  </span>
+                  <span className="text-gray-300 text-xl">{'>'}</span>
+                </Link>
+                <Link
+                  to="/template-studio"
+                  className="flex items-center justify-between rounded-lg border border-gray-200 px-3 py-3 hover:border-gray-300"
+                >
+                  <span className="flex items-center gap-2">
+                    <SparklesIcon className="w-5 h-5 text-slate-700" />
+                    <span>
+                      <span className="block text-sm font-semibold text-gray-900">Daily log Template Studio</span>
+                      <span className="block text-xs text-gray-500">Import your institution daily log form.</span>
+                    </span>
+                  </span>
+                  <span className="text-gray-300 text-xl">{'>'}</span>
+                </Link>
+                <Link
+                  to="/final-report"
+                  className="flex items-center justify-between rounded-lg border border-gray-200 px-3 py-3 hover:border-gray-300"
+                >
+                  <span className="flex items-center gap-2">
+                    <ClipboardDocumentCheckIcon className="w-5 h-5 text-slate-700" />
+                    <span>
+                      <span className="block text-sm font-semibold text-gray-900">Final Report Studio</span>
+                      <span className="block text-xs text-gray-500">Chapters, narrative draft, official final versions.</span>
+                    </span>
+                  </span>
+                  <span className="text-gray-300 text-xl">{'>'}</span>
+                </Link>
+              </div>
+
+              {internship && (
+                <div className="rounded-lg border border-gray-200 p-3 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <SwatchIcon className="w-5 h-5 text-slate-700" />
+                    <h3 className="text-sm font-semibold text-gray-900">Report style</h3>
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    These change presentation only. Official approved records stay untouched.
+                  </p>
+                  <div>
+                    <label className={labelCls}>Report title</label>
+                    <input
+                      className={inputCls}
+                      value={prefs.title ?? ''}
+                      placeholder={LAYOUT_DEFAULTS.title}
+                      onBlur={() => savePrefs({ ...prefs, title: (prefs.title ?? '').trim() || undefined })}
+                      onChange={(e) => setPrefs((p) => ({ ...p, title: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Accent colour</label>
+                    <div className="flex gap-2">
+                      {ACCENT_CHOICES.map((c) => {
+                        const active = JSON.stringify(prefs.accent ?? LAYOUT_DEFAULTS.accent) === JSON.stringify(c.rgb);
+                        return (
+                          <button
+                            key={c.name}
+                            type="button"
+                            aria-label={c.name}
+                            onClick={() => savePrefs({ ...prefs, accent: c.rgb })}
+                            className={`w-9 h-9 rounded-full border-2 ${active ? 'border-slate-900 ring-2 ring-slate-300' : 'border-transparent'}`}
+                            style={{ backgroundColor: `rgb(${c.rgb[0]}, ${c.rgb[1]}, ${c.rgb[2]})` }}
+                          />
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    {[
+                      ['show_signatures', 'Include supervisor signatures'],
+                      ['show_comments', 'Include supervisor comments'],
+                      ['show_evaluations', 'Include evaluations section'],
+                    ].map(([key, label]) => (
+                      <label key={key} className="flex items-center gap-2 text-sm text-gray-700">
+                        <input
+                          type="checkbox"
+                          checked={prefs[key] ?? LAYOUT_DEFAULTS[key]}
+                          onChange={(e) => savePrefs({ ...prefs, [key]: e.target.checked })}
+                          className="h-4 w-4 rounded border-gray-300"
+                        />
+                        {label}
+                      </label>
+                    ))}
+                  </div>
+                  {prefsSaving && <p className="text-xs text-gray-400">Saving...</p>}
+                </div>
+              )}
+
+              {internship && (
+                <div className="rounded-lg border border-gray-200 p-3 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <TableCellsIcon className="w-5 h-5 text-slate-700" />
+                    <h3 className="text-sm font-semibold text-gray-900">Daily log format</h3>
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    {usingCustomTemplate
+                      ? "Using a custom format imported from your institution's form."
+                      : usingMultiTask
+                        ? 'Using the default AIntern daily log format with multiple tasks per day.'
+                        : 'Using the default AIntern daily log format.'}
+                  </p>
+                  {!usingCustomTemplate && v2TemplateId && (
+                    <label className="flex items-start gap-2 text-sm text-gray-700">
+                      <input
+                        type="checkbox"
+                        checked={usingMultiTask}
+                        disabled={multiTaskSaving}
+                        onChange={toggleMultiTask}
+                        className="h-4 w-4 rounded border-gray-300 mt-0.5"
+                      />
+                      <span>
+                        Allow multiple tasks per day
+                        <span className="block text-xs text-gray-400 mt-0.5">
+                          Applies to new logs only. Approved entries keep their original frozen evidence.
+                        </span>
+                      </span>
+                    </label>
+                  )}
+                  {dailyTemplate && (
+                    <details className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                      <summary className="cursor-pointer text-xs font-semibold text-gray-700">
+                        Choose visible daily log fields
+                      </summary>
+                      <div className="mt-3 space-y-3">
+                        {dailyTemplate.fields_schema.sections.map((section) => (
+                          <div key={section.section_id}>
+                            <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-1">
+                              {section.section_name}
+                            </p>
+                            <div className="space-y-1">
+                              {section.fields.map((f) => {
+                                const path = `${section.section_id}.${f.field_id}`;
+                                const isHidden = hiddenFields.includes(path);
+                                return (
+                                  <label
+                                    key={path}
+                                    className="flex items-center justify-between gap-2 text-sm text-gray-700 py-0.5"
+                                  >
+                                    <span>
+                                      {f.field_name}
+                                      {f.required && <span className="text-red-400"> *</span>}
+                                    </span>
+                                    <input
+                                      type="checkbox"
+                                      checked={!isHidden}
+                                      disabled={fieldPrefsSaving}
+                                      onChange={() => toggleFieldVisibility(path)}
+                                      className="h-4 w-4 rounded border-gray-300"
+                                    />
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      {fieldPrefsSaving && <p className="mt-2 text-xs text-gray-400">Saving...</p>}
+                    </details>
+                  )}
+                </div>
+              )}
+            </section>
 
             <section className="bg-white rounded-xl border border-gray-200 p-4 space-y-4">
               <div>
@@ -391,7 +652,7 @@ export default function ReportCenterPage() {
                     <div>
                       <p className="text-sm font-semibold text-gray-900">Import institution sample</p>
                       <p className="text-xs text-gray-500 mt-0.5">
-                        Upload a PDF/photo of a {activeType} report. AI extracts structure only; you review sanitized JSON before applying.
+                        Upload a PDF/photo of a {activeType} report. AI extracts structure only; you review a visual preview before applying.
                       </p>
                     </div>
                     <div className="grid grid-cols-[1fr_auto] gap-2">
@@ -421,7 +682,7 @@ export default function ReportCenterPage() {
                       disabled={busy || !sampleFile}
                       className="w-full rounded-lg border border-slate-900 bg-white py-2.5 text-sm font-medium text-slate-900 hover:bg-slate-100 disabled:opacity-40"
                     >
-                      Extract sample to JSON
+                      Extract sample template
                     </button>
                     {structureDraft && (
                       <div className="space-y-2">
