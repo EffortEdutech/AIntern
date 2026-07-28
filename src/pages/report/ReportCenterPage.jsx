@@ -42,19 +42,30 @@ import {
 } from '@heroicons/react/24/outline';
 
 const REPORT_META = {
+  settings: {
+    label: 'Settings',
+    copy: 'Reporting setup, templates, style, and daily log format.',
+  },
   [REPORT_TYPES.WEEKLY]: {
-    label: 'Weekly report',
+    label: 'Weekly',
     copy: 'Choose narrative or table format, then freeze the selected week as an official report.',
   },
   [REPORT_TYPES.MONTHLY]: {
-    label: 'Monthly report',
+    label: 'Monthly',
     copy: 'Combined table and narrative format for monthly progress and reflection.',
   },
   [REPORT_TYPES.FINAL]: {
-    label: 'Final report',
+    label: 'Final',
     copy: 'Chapter-based final training report with logbook and evaluation appendices.',
   },
 };
+
+const REPORT_TABS = [
+  'settings',
+  REPORT_TYPES.WEEKLY,
+  REPORT_TYPES.MONTHLY,
+  REPORT_TYPES.FINAL,
+];
 
 const DATE_FMT = new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 const inputCls =
@@ -91,6 +102,7 @@ export default function ReportCenterPage() {
   const [internship, setInternship] = useState(null);
   const [snapshots, setSnapshots] = useState(null);
   const [evaluations, setEvaluations] = useState([]);
+  const [activeTab, setActiveTab] = useState('settings');
   const [activeType, setActiveType] = useState(REPORT_TYPES.WEEKLY);
   const [periods, setPeriods] = useState({});
   const [versions, setVersions] = useState({ weekly: [], monthly: [] });
@@ -397,27 +409,35 @@ export default function ReportCenterPage() {
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-3 gap-2">
-              {[REPORT_TYPES.WEEKLY, REPORT_TYPES.MONTHLY, REPORT_TYPES.FINAL].map((type) => (
+            <nav className="flex items-center gap-1 text-xs text-gray-500" aria-label="Breadcrumb">
+              <span>Report</span>
+              <span>/</span>
+              <span className="font-semibold text-gray-900">{REPORT_META[activeTab].label}</span>
+            </nav>
+
+            <div className="grid grid-cols-4 gap-2">
+              {REPORT_TABS.map((tab) => (
                 <button
-                  key={type}
+                  key={tab}
                   type="button"
                   onClick={() => {
-                    setActiveType(type);
+                    setActiveTab(tab);
+                    if (tab !== 'settings') setActiveType(tab);
                     setSampleFile(null);
                     setStructureDraft(null);
                   }}
                   className={`rounded-lg border px-2 py-2 text-xs font-semibold ${
-                    activeType === type
+                    activeTab === tab
                       ? 'border-slate-900 bg-slate-900 text-white'
                       : 'border-gray-200 bg-white text-gray-600'
                   }`}
                 >
-                  {REPORT_META[type].label.replace(' report', '')}
+                  {REPORT_META[tab].label}
                 </button>
               ))}
             </div>
 
+            {activeTab === 'settings' && (
             <section className="bg-white rounded-xl border border-gray-200 p-4 space-y-4">
               <div>
                 <h2 className="font-semibold text-gray-900">Reporting workspace</h2>
@@ -600,10 +620,13 @@ export default function ReportCenterPage() {
                 </div>
               )}
             </section>
+            )}
 
+            {activeTab !== 'settings' && (
+            <>
             <section className="bg-white rounded-xl border border-gray-200 p-4 space-y-4">
               <div>
-                <h2 className="font-semibold text-gray-900">{REPORT_META[activeType].label}</h2>
+                <h2 className="font-semibold text-gray-900">{REPORT_META[activeType].label} report</h2>
                 <p className="text-sm text-gray-500 mt-0.5">{REPORT_META[activeType].copy}</p>
               </div>
 
@@ -746,7 +769,7 @@ export default function ReportCenterPage() {
                     disabled={busy || !canCreatePeriodReport || !period.start || !period.end}
                     className="w-full rounded-lg bg-slate-900 py-3 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-40"
                   >
-                    Create official {REPORT_META[activeType].label.toLowerCase()}
+                    Create official {REPORT_META[activeType].label.toLowerCase()} report
                   </button>
 
                   {passLocked && (
@@ -831,6 +854,8 @@ export default function ReportCenterPage() {
                   </ul>
                 )}
               </section>
+            )}
+            </>
             )}
           </>
         )}

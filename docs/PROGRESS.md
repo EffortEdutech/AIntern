@@ -2,7 +2,7 @@
 
 <!-- Session 6 review addendum appended July 10, 2026 — see below -->
 
-**Last Updated:** July 28, 2026 - Report navigation and settings consolidated
+**Last Updated:** July 28, 2026 - Report Center tabs and breadcrumb polish
 
 ## 📊 OVERALL STATUS
 
@@ -23,7 +23,7 @@
 | **PDF-import track — Phase B** | Full training-report import (chapter-based final report) | ✅ Built, awaiting user e2e |
 | **PDF-import track — Phase B hotfix** | Gemini model deprecation fix + live per-provider model picker (v11) | ✅ Built, awaiting user e2e |
 | **Report Center** | Standard templates + Weekly/Monthly sample upload → visual preview → custom template apply + frozen official template metadata | ✅ Built, awaiting user e2e |
-| **Report UX polish** | Bottom Report tab + consolidated Report Center settings/templates workspace | ✅ Built |
+| **Report UX polish** | Bottom Report tab + consolidated Report Center settings/templates workspace + Report/Settings/Weekly/Monthly/Final tabs | ✅ Built |
 
 ---
 
@@ -730,17 +730,10 @@ as appendix chapters, and the same immutable-snapshot + Verification Appendix
 - `npm run build` passed.
 - `git diff --check` passed for changed files.
 - Graphify refreshed after implementation: 1491 nodes, 3019 edges, 94 communities.
-- Live DB apply is pending: Codex CLI hit Supabase `403` on `db query --linked --file database\migrations\012_freeze_final_report_title.sql`.
+- Live DB apply completed by user after Codex CLI previously hit Supabase `403` on `db query --linked --file database\migrations\012_freeze_final_report_title.sql`.
 
-#### Required live apply command
-Run from a Supabase account/session with database query permission:
-
-```powershell
-$env:SUPABASE_TELEMETRY_DISABLED='1'
-npx --yes supabase@latest db query --linked --file database\migrations\012_freeze_final_report_title.sql
-```
-
-Then verify:
+#### Live verification command
+If needed, verify from a Supabase account/session with database query permission:
 
 ```powershell
 npx --yes supabase@latest db query --linked "select position('final_report_title' in pg_get_functiondef('public.create_report_snapshot(uuid,text,date,date)'::regprocedure)) as freeze_marker_position;"
@@ -804,7 +797,8 @@ npx --yes supabase@latest db query --linked "select position('final_report_title
 
 #### New / changed
 - `src/components/layout/InternShell.jsx` - bottom navigation is now `Home / Log / History / Report / Profile`, with `Report` opening `/reports`.
-- `src/pages/report/ReportCenterPage.jsx` - added a consolidated Reporting workspace:
+- `src/pages/report/ReportCenterPage.jsx` - added `Settings / Weekly / Monthly / Final` tabs with breadcrumb context (`Report / Settings`, `Report / Weekly`, `Report / Monthly`, `Report / Final`).
+- `src/pages/report/ReportCenterPage.jsx` - moved the consolidated Reporting workspace into the Settings tab:
   - quick access to Official logbook, Daily log Template Studio, and Final Report Studio;
   - report style settings moved here from Profile;
   - daily log format controls moved here from Profile, including multi-task opt-in and field visibility;
@@ -818,8 +812,11 @@ npx --yes supabase@latest db query --linked "select position('final_report_title
 
 #### User test path
 1. Bottom nav -> Report -> confirm Report Center opens.
-2. Home -> Report Center -> confirm it still opens `/reports`.
-3. Report Center -> Reporting workspace -> open Daily log Template Studio and Final Report Studio.
-4. Report Center -> change report title/accent/toggles -> confirm saved toast.
-5. Report Center -> Daily log format -> toggle multiple tasks and field visibility.
-6. Profile -> confirm report style, logbook format, daily field controls, and Template Studio link are no longer shown.
+2. Confirm the breadcrumb reads `Report / Settings` and shared settings are shown only there.
+3. Switch to Weekly -> confirm breadcrumb reads `Report / Weekly` and the Weekly workflow appears without the Settings cards.
+4. Switch to Monthly -> confirm breadcrumb reads `Report / Monthly` and the Monthly workflow appears without the Settings cards.
+5. Switch to Final -> confirm breadcrumb reads `Report / Final` and the Final Report Studio entry appears without the Settings cards.
+6. Settings -> open Daily log Template Studio and Final Report Studio.
+7. Settings -> change report title/accent/toggles -> confirm saved toast.
+8. Settings -> Daily log format -> toggle multiple tasks and field visibility.
+9. Profile -> confirm report style, logbook format, daily field controls, and Template Studio link are no longer shown.
