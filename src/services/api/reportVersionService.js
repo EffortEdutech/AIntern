@@ -17,6 +17,24 @@ import { supabase } from '../supabase/client';
 import { dailyLogService } from './dailyLogService';
 import { logbookService } from './logbookService';
 
+const PERIOD_ORDER_ERROR = 'Report start date must be on or before the end date.';
+
+function periodDatesOutOfOrder(periodStart, periodEnd) {
+  return Boolean(periodStart && periodEnd && periodStart > periodEnd);
+}
+
+function friendlySnapshotError(error) {
+  const message = error?.message ?? 'Could not create official report version.';
+  if (
+    message.includes('report_versions_check') ||
+    message.includes('violates check constraint') ||
+    message.includes('period_end')
+  ) {
+    return PERIOD_ORDER_ERROR;
+  }
+  return message;
+}
+
 class ReportVersionService {
   /** All report versions for an internship, newest first (no content blob). */
   async listVersions(internshipId, reportType = 'logbook') {
@@ -43,13 +61,17 @@ class ReportVersionService {
 
   /** Create an official snapshot via the server-side RPC. */
   async createSnapshot(internshipId, reportType = 'logbook', periodStart = null, periodEnd = null) {
+    if (periodDatesOutOfOrder(periodStart, periodEnd)) {
+      return { success: false, error: PERIOD_ORDER_ERROR };
+    }
+
     const { data, error } = await supabase.rpc('create_report_snapshot', {
       p_internship: internshipId,
       p_type: reportType,
       p_start: periodStart,
       p_end: periodEnd,
     });
-    if (error) return { success: false, error: error.message };
+    if (error) return { success: false, error: friendlySnapshotError(error) };
     return { success: true, data };
   }
 

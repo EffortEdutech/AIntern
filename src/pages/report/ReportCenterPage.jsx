@@ -399,7 +399,10 @@ export default function ReportCenterPage() {
   const activeJson = templateAsJson(selectedTemplate);
   const typeVersions = versions[activeType] ?? [];
   const period = periods[activeType] ?? {};
-  const canCreatePeriodReport = activeType !== REPORT_TYPES.FINAL && snapshots?.length > 0 && !passLocked;
+  const periodDateError = activeType !== REPORT_TYPES.FINAL && period.start && period.end && period.start > period.end
+    ? 'Start date must be on or before end date.'
+    : '';
+  const canCreatePeriodReport = activeType !== REPORT_TYPES.FINAL && snapshots?.length > 0 && !passLocked && !periodDateError;
 
   return (
     <InternShell title="Report Center">
@@ -766,6 +769,12 @@ export default function ReportCenterPage() {
                   >
                     Create official {REPORT_META[activeType].label.toLowerCase()} report
                   </button>
+
+                  {periodDateError && (
+                    <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                      {periodDateError}
+                    </p>
+                  )}
 
                   {passLocked && (
                     <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">

@@ -827,3 +827,27 @@ npx --yes supabase@latest db query --linked "select position('final_report_title
 10. Settings -> change report title/accent/toggles -> confirm saved toast.
 11. Settings -> Daily log format -> toggle multiple tasks and field visibility.
 12. Profile -> confirm report style, logbook format, daily field controls, and Template Studio link are no longer shown.
+
+
+## 2026-08-13 - Ad-hoc: User-scoped local history + report period validation
+
+### Implemented
+- Fixed shared-device History bleed between different logged-in interns.
+  - Root cause: the original Dexie daily-log draft store was keyed only by `entry_date`, so two accounts using the same browser could read the same local draft/history records for the same date.
+  - Added Dexie v2 `dailyDraftsScoped` keyed by signed-in `user_id + entry_date`.
+  - Updated `dailyLogService` reads/writes/status sync/restore/delete to use the current Supabase session user as the local draft owner.
+  - Left the legacy unscoped `dailyDrafts` table intact but unused to avoid wrongly assigning old local rows to the next account that logs in.
+- Improved official report period validation.
+  - `reportVersionService.createSnapshot()` now blocks start-after-end periods before calling the Supabase RPC.
+  - Raw `report_versions_check` / check-constraint failures are mapped to: `Report start date must be on or before the end date.`
+  - Report Center disables the create button and shows a red inline message when Weekly/Monthly start date is after end date.
+
+### Verification
+- Ran `npm run build` successfully on 2026-08-13.
+
+### Manual UAT To Do
+- Account A: create/edit one Daily Log, open History, confirm only Account A's logs appear.
+- Sign out, Account B: open History, confirm Account A's local logs do not appear.
+- Account B: create a different Daily Log for the same date, return to Account A, confirm each account sees its own record only.
+- Report Center / Weekly or Monthly: set Start later than End, confirm the red validation message appears and official report creation is disabled.
+- Report Center / Weekly or Monthly: set valid Start <= End, confirm official version creation behaves normally.

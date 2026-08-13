@@ -23,4 +23,13 @@ internDb.version(1).stores({
   templateCache: 'template_id, cached_at',
 });
 
+internDb.version(2).stores({
+  // Keep the legacy v1 table intact to avoid assigning old unscoped local rows
+  // to the wrong account after a shared-device login switch. New code uses the
+  // scoped table below.
+  dailyDrafts: 'entry_date, status, updated_at',
+  dailyDraftsScoped: 'id, [user_id+entry_date], user_id, entry_date, status, updated_at',
+  templateCache: 'template_id, cached_at',
+});
+
 export default internDb;

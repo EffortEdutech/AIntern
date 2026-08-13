@@ -22,6 +22,19 @@ function todayStr() {
   return new Date().toISOString().split('T')[0];
 }
 
+async function currentLocalUserId() {
+  const { data } = await supabase.auth.getSession();
+  const userId = data?.session?.user?.id;
+  if (!userId) {
+    throw new Error('Login required before using local daily logs.');
+  }
+  return userId;
+}
+
+function draftKey(userId, entryDate) {
+  return `${userId}:${entryDate}`;
+}
+
 class DailyLogService {
   /**
    * Fetch the daily log template — network first, Dexie cache fallback.
@@ -89,7 +102,8 @@ class DailyLogService {
    * Get the draft for a date (default today), or null.
    */
   async getDraft(entryDate = todayStr()) {
-    return (await internDb.dailyDrafts.get(entryDate)) ?? null;
+    const userId = await currentLocalUserId();
+    return (await internDb.dailyDraftsScoped.where('[user_id+entry_date]').equals([userId, entryDate]).first()) ?? null;
   }
 
   /**
@@ -103,7 +117,8 @@ class DailyLogService {
    * just because they synced later.
    */
   async saveDraft(entryDate, data, status = 'draft', deadlineTime = '23:59') {
-    const existing = await internDb.dailyDrafts.get(entryDate);
+    const userId = await currentLocalUserId();
+    const existing = await internDb.dailyDraftsScoped.where('[user_id+entry_date]').equals([userId, entryDate]).first();
     const clientCreatedAt = existing?.client_created_at ?? new Date().toISOString();
     const deadline = new Date(`${entryDate}T${deadlineTime}:59`);
     const late = Number.isFinite(deadline.getTime())
@@ -111,6 +126,8 @@ class DailyLogService {
       : false;
     const record = {
       ...existing,
+      id: existing?.id ?? draftKey(userId, entryDate),
+      user_id: userId,
       entry_date: entryDate,
       data,
       status,
@@ -118,7 +135,7 @@ class DailyLogService {
       client_created_at: clientCreatedAt,
       updated_at: new Date().toISOString()
     };
-    await internDb.dailyDrafts.put(record);
+    await internDb.dailyDraftsScoped.put(record);
     return record;
   }
 
@@ -126,7 +143,8 @@ class DailyLogService {
    * All local drafts, newest first.
    */
   async listDrafts() {
-    const all = await internDb.dailyDrafts.toArray();
+    const userId = await currentLocalUserId();
+    const all = await internDb.dailyDraftsScoped.where('user_id').equals(userId).toArray();
     return all.sort((a, b) => (a.entry_date < b.entry_date ? 1 : -1));
   }
 
@@ -143,7 +161,8 @@ class DailyLogService {
    * Merge server-side submission status into the local draft.
    */
   async markSubmitted(entryDate, submission) {
-    const existing = await internDb.dailyDrafts.get(entryDate);
+    const userId = await currentLocalUserId();
+    const existing = await internDb.dailyDraftsScoped.where('[user_id+entry_date]').equals([userId, entryDate]).first();
     if (!existing) {
       return null;
     }
@@ -174,7 +193,7 @@ class DailyLogService {
       supervisor_comment: submission.supervisor_comment ?? null,
       updated_at: new Date().toISOString()
     };
-    await internDb.dailyDrafts.put(next);
+    await internDb.dailyDraftsScoped.put(next);
     return next;
   }
 
@@ -182,7 +201,8 @@ class DailyLogService {
    * Reopen a pending submitted draft after the intern withdraws it.
    */
   async markReady(entryDate) {
-    const existing = await internDb.dailyDrafts.get(entryDate);
+    const userId = await currentLocalUserId();
+    const existing = await internDb.dailyDraftsScoped.where('[user_id+entry_date]').equals([userId, entryDate]).first();
     if (!existing) {
       return null;
     }
@@ -196,7 +216,7 @@ class DailyLogService {
       supervisor_comment: null,
       updated_at: new Date().toISOString()
     };
-    await internDb.dailyDrafts.put(next);
+    await internDb.dailyDraftsScoped.put(next);
     return next;
   }
 
@@ -206,11 +226,14 @@ class DailyLogService {
    * Preserves the server's client_created_at (late-flag authority).
    */
   async restoreRecord(record) {
-    const existing = await internDb.dailyDrafts.get(record.entry_date);
+    const userId = await currentLocalUserId();
+    const existing = await internDb.dailyDraftsScoped.where('[user_id+entry_date]').equals([userId, record.entry_date]).first();
     if (existing) {
       return existing; // never overwrite local work during restore
     }
     const next = {
+      id: draftKey(userId, record.entry_date),
+      user_id: userId,
       entry_date: record.entry_date,
       data: record.data ?? {},
       status: record.status ?? 'submitted',
@@ -218,7 +241,7 @@ class DailyLogService {
       client_created_at: record.client_created_at ?? new Date().toISOString(),
       updated_at: record.updated_at ?? new Date().toISOString(),
     };
-    await internDb.dailyDrafts.put(next);
+    await internDb.dailyDraftsScoped.put(next);
     return next;
   }
 
@@ -226,7 +249,8 @@ class DailyLogService {
    * Delete a local draft (only sensible while status is draft/ready).
    */
   async deleteDraft(entryDate) {
-    await internDb.dailyDrafts.delete(entryDate);
+    const userId = await currentLocalUserId();
+    await internDb.dailyDraftsScoped.delete(draftKey(userId, entryDate));
   }
 }
 
