@@ -79,7 +79,7 @@ export default function InternHome() {
     <InternShell>
       <div className="p-4 space-y-4">
         <p className="text-lg font-semibold text-gray-900">
-          Assalamualaikum, {firstName} 👋
+          Hello, {firstName} 👋
         </p>
 
         {/* ── Pass / trial status (Phase 4 S13) ── */}
