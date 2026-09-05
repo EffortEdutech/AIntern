@@ -1,26 +1,72 @@
 /**
- * AIntern - Internship Pass section (Phase 4 S13) — used in Profile.
+ * AIntern - Internship Pass section
  *
- * Shows access state (trial countdown / active pass / expired), the two
- * pass plans (display prices from entitlementService config), and the
- * promo/activation-code redemption input — the pilot's activation path.
- * Online payment (toyyibPay/Stripe) arrives in Phase 4b.
- *
- * @file src/components/pass/PassSection.jsx
- * @created July 12, 2026 - Phase 4 S13
+ * Phase 3 Payment Hub integration: checkout and portal are created by the
+ * Central Payment Hub. AIntern does not import Stripe or own provider prices.
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAccess } from '../../hooks/useAccess';
+import { useAuth } from '../../context/AuthContext';
 import { entitlementService, PASS_PLANS, planLabel } from '../../services/api/entitlementService';
 import { useToast } from '../../context/ToastContext';
 import { TicketIcon, CheckBadgeIcon, ClockIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
 
 export default function PassSection() {
+  const { user } = useAuth();
   const { access, loading, refresh } = useAccess();
   const toast = useToast();
   const [code, setCode] = useState('');
   const [redeeming, setRedeeming] = useState(false);
+  const [checkoutPlan, setCheckoutPlan] = useState(null);
+  const [portalBusy, setPortalBusy] = useState(false);
+  const [hubAccess, setHubAccess] = useState(null);
+  const [hubError, setHubError] = useState('');
+
+  const userRef = user?.id;
+
+  const refreshHubAccess = async () => {
+    if (!userRef) return;
+    const res = await entitlementService.getHubAccess(userRef);
+    if (res.success) {
+      setHubAccess(res.data);
+      setHubError('');
+    } else {
+      setHubError(res.error);
+    }
+  };
+
+  useEffect(() => {
+    refreshHubAccess();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userRef]);
+
+  const startCheckout = async (planKey) => {
+    if (!userRef) {
+      toast.error('Please sign in before activating a pass.');
+      return;
+    }
+    setCheckoutPlan(planKey);
+    const res = await entitlementService.checkout({ userRef, planKey });
+    setCheckoutPlan(null);
+    if (res.success) {
+      window.location.href = res.data.redirect_url;
+    } else {
+      toast.error(res.error);
+    }
+  };
+
+  const openPortal = async () => {
+    if (!userRef) return;
+    setPortalBusy(true);
+    const res = await entitlementService.portal({ userRef });
+    setPortalBusy(false);
+    if (res.success) {
+      window.location.href = res.data.redirect_url;
+    } else {
+      toast.error(res.error);
+    }
+  };
 
   const redeem = async () => {
     if (!code.trim()) return;
@@ -30,6 +76,7 @@ export default function PassSection() {
     if (res.success) {
       setCode('');
       await refresh();
+      await refreshHubAccess();
       toast.success(`${planLabel(res.data.plan)} activated — valid until ${String(res.data.expires_at).slice(0, 10)}.`);
     } else {
       toast.error(res.error);
@@ -37,6 +84,9 @@ export default function PassSection() {
   };
 
   const trialDays = access ? entitlementService.daysLeft(access.trial_ends_at) : 0;
+  const hubSubscription = hubAccess?.subscription;
+  const hubEntitlements = hubAccess?.entitlements?.entitlements ?? [];
+  const hasHubCustomer = hubSubscription && hubSubscription.state !== 'none';
 
   return (
     <section className="bg-white rounded-xl border border-gray-200 p-5 space-y-3">
@@ -80,17 +130,60 @@ export default function PassSection() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-2">
+      {hubSubscription && hubSubscription.state !== 'none' && (
+        <div className="rounded-lg bg-slate-50 border border-slate-200 px-3 py-2.5 text-sm text-slate-700">
+          Payment Hub state: <strong>{hubSubscription.state}</strong>
+          {hubSubscription.planKey ? <> · {planLabel(hubSubscription.planKey)}</> : null}
+          {hubEntitlements.length > 0 ? <> · {hubEntitlements.length} entitlement(s)</> : null}
+        </div>
+      )}
+
+      {hubError && (
+        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          Payment Hub is not reachable yet: {hubError}
+        </p>
+      )}
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         {PASS_PLANS.map((p) => (
-          <div key={p.id} className="rounded-lg border border-gray-200 p-3 text-center space-y-0.5">
-            <p className="text-sm font-semibold text-gray-900">{p.label}</p>
-            <p className="text-xl font-bold text-slate-900">{p.price}</p>
-            <p className="text-[11px] text-gray-500">{p.blurb}</p>
+          <div key={p.id} className="rounded-lg border border-gray-200 p-3 text-center space-y-2">
+            <div className="space-y-0.5">
+              <p className="text-sm font-semibold text-gray-900">{p.label}</p>
+              <p className="text-xl font-bold text-slate-900">{p.price}</p>
+              <p className="text-[11px] text-gray-500">{p.blurb}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => startCheckout(p.id)}
+              disabled={checkoutPlan !== null}
+              className="w-full bg-slate-900 text-white rounded-lg px-3 py-2 text-sm font-medium hover:bg-slate-700 disabled:opacity-40"
+            >
+              {checkoutPlan === p.id ? 'Opening checkout…' : 'Pay with Stripe sandbox'}
+            </button>
           </div>
         ))}
       </div>
+
+      <div className="flex flex-wrap gap-2 justify-center">
+        <button
+          type="button"
+          onClick={refreshHubAccess}
+          className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+        >
+          Refresh payment state
+        </button>
+        <button
+          type="button"
+          onClick={openPortal}
+          disabled={portalBusy || !hasHubCustomer}
+          className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+        >
+          {portalBusy ? 'Opening portal…' : 'Manage billing'}
+        </button>
+      </div>
+
       <p className="text-xs text-gray-500 text-center">
-        Online payment is coming soon — for now, activate with a code.
+        Sandbox checkout is powered by the Central Payment Hub. Promo codes remain as a pilot fallback.
       </p>
 
       <div className="flex gap-2">
