@@ -87,6 +87,8 @@ export default function PassSection() {
   const hubSubscription = hubAccess?.subscription;
   const hubEntitlements = hubAccess?.entitlements?.entitlements ?? [];
   const hasHubCustomer = hubSubscription && hubSubscription.state !== 'none';
+  const hasActiveHubPass = ['active', 'trial'].includes(hubSubscription?.state);
+  const activePlanKey = hubSubscription?.planKey;
 
   return (
     <section className="bg-white rounded-xl border border-gray-200 p-5 space-y-3">
@@ -97,7 +99,17 @@ export default function PassSection() {
 
       {loading && <p className="text-sm text-gray-400">Checking your access…</p>}
 
-      {access && access.pass && (
+      {hasActiveHubPass && (
+        <div className="flex items-start gap-2 rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2.5">
+          <CheckBadgeIcon className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+          <p className="text-sm text-emerald-800">
+            <strong>{activePlanKey ? planLabel(activePlanKey) : 'Internship pass'}</strong> is active through Payment Hub.
+            Reviews, official reports, exports, and bundled AI are unlocked by verified payment state.
+          </p>
+        </div>
+      )}
+
+      {!hasActiveHubPass && access && access.pass && (
         <div className="flex items-start gap-2 rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2.5">
           <CheckBadgeIcon className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
           <p className="text-sm text-emerald-800">
@@ -108,7 +120,7 @@ export default function PassSection() {
         </div>
       )}
 
-      {access && !access.pass && access.trial_active && (
+      {!hasActiveHubPass && access && !access.pass && access.trial_active && (
         <div className="flex items-start gap-2 rounded-lg bg-blue-50 border border-blue-200 px-3 py-2.5">
           <ClockIcon className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
           <p className="text-sm text-blue-800">
@@ -119,7 +131,7 @@ export default function PassSection() {
         </div>
       )}
 
-      {access && !access.active && (
+      {!hasActiveHubPass && access && !access.active && (
         <div className="flex items-start gap-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2.5">
           <ExclamationTriangleIcon className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
           <p className="text-sm text-amber-800">
@@ -130,7 +142,7 @@ export default function PassSection() {
         </div>
       )}
 
-      {hubSubscription && hubSubscription.state !== 'none' && (
+      {hubSubscription && hubSubscription.state !== 'none' && !hasActiveHubPass && (
         <div className="rounded-lg bg-slate-50 border border-slate-200 px-3 py-2.5 text-sm text-slate-700">
           Payment Hub state: <strong>{hubSubscription.state}</strong>
           {hubSubscription.planKey ? <> · {planLabel(hubSubscription.planKey)}</> : null}
